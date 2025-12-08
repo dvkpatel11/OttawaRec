@@ -147,7 +147,7 @@ def monitor_loop(activity_type: str = 'badminton-16+', group_size: int = 2):
                 )
                 
                 if should_notify:
-                    telegram.notify_slot_found(slots[0])
+                    telegram.notify_slot_found(slots, activity_type)
                 # Don't auto-book - let user choose which slot to book via UI
             # Don't notify for no slots - too many messages
             

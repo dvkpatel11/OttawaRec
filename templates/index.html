@@ -271,6 +271,24 @@
             .status-cell {
                 gap: 2px;
             }
+            
+            #contactModal {
+                padding: 10px !important;
+            }
+            
+            #contactModal > div {
+                max-width: 100% !important;
+                padding: 20px !important;
+                max-height: 95vh !important;
+            }
+            
+            #contactModal h3 {
+                font-size: 1.2em !important;
+            }
+            
+            #contactModal .form-input {
+                font-size: 16px !important; /* Prevents zoom on iOS */
+            }
         }
         
         .group-size-input {
@@ -639,14 +657,25 @@
         function showContactForm(sportId, slot, fields, csrfToken) {
             // Create modal or form display
             const modal = document.createElement('div');
-            modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; display: flex; align-items: center; justify-content: center;';
+            modal.id = 'contactModal';
+            modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 20px;';
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) {
+                    closeContactModal();
+                }
+            });
             
             const formDiv = document.createElement('div');
-            formDiv.style.cssText = 'background: white; padding: 20px; border-radius: 8px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;';
+            formDiv.style.cssText = 'background: #0a0e27; border: 2px solid #00ffff; padding: 30px; border-radius: 12px; max-width: 600px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 0 30px rgba(0, 255, 255, 0.5); position: relative;';
             
             let formHtml = `
-                <h3 style="margin-bottom: 20px; font-family: 'Orbitron', monospace; color: #00ffff; text-shadow: 0 0 10px rgba(0, 255, 255, 0.8); font-size: 1.5em; font-weight: 700;">Contact Information</h3>
-                <div style="margin-bottom: 20px; color: #00ff88; font-weight: 600; font-family: 'Orbitron', monospace;">${slot.full_datetime || slot.date + ' ' + slot.time}</div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+                    <h3 style="margin: 0; font-family: 'Orbitron', monospace; color: #00ffff; text-shadow: 0 0 10px rgba(0, 255, 255, 0.8); font-size: 1.5em; font-weight: 700;">Contact Information</h3>
+                    <button type="button" id="closeModalBtn" style="background: transparent; border: 2px solid #00ffff; color: #00ffff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 20px; line-height: 1; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease;" onmouseover="this.style.background='rgba(0,255,255,0.2)'" onmouseout="this.style.background='transparent'">×</button>
+                </div>
+                <div style="margin-bottom: 25px; padding: 15px; background: rgba(0, 255, 136, 0.1); border: 1px solid #00ff88; border-radius: 8px;">
+                    <div style="color: #00ff88; font-weight: 600; font-family: 'Orbitron', monospace; font-size: 1.1em;">${slot.full_datetime || slot.date + ' ' + slot.time}</div>
+                </div>
                 <form id="contactForm">
                     <input type="hidden" name="csrf_token" value="${csrfToken || ''}">
             `;
@@ -667,25 +696,25 @@
                             });
                         }
                         formHtml += `
-                            <div style="margin-bottom: 15px;">
-                                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #00ffff; font-family: 'Orbitron', monospace;">${label}</label>
-                                <select name="${field.name}" class="form-input" ${required} style="width: 100%; padding: 10px; background: rgba(0, 0, 0, 0.5); border: 2px solid #00ffff; border-radius: 4px; color: #00ffff; font-family: 'Rajdhani', sans-serif; font-weight: 500;">
+                            <div style="margin-bottom: 20px;">
+                                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #00ffff; font-family: 'Orbitron', monospace; font-size: 0.95em;">${label}${required ? ' <span style="color: #ff0064;">*</span>' : ''}</label>
+                                <select name="${field.name}" class="form-input" ${required} style="width: 100%; padding: 12px; background: rgba(0, 0, 0, 0.6); border: 2px solid #00ffff; border-radius: 6px; color: #00ffff; font-family: 'Rajdhani', sans-serif; font-weight: 500; font-size: 1em; box-sizing: border-box; cursor: pointer;">
                                     ${optionsHtml}
                                 </select>
                             </div>
                         `;
                     } else if (field.type === 'textarea') {
                         formHtml += `
-                            <div style="margin-bottom: 15px;">
-                                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #00ffff; font-family: 'Orbitron', monospace;">${label}</label>
-                                <textarea name="${field.name}" class="form-input" ${required} placeholder="${placeholder}" style="width: 100%; padding: 10px; background: rgba(0, 0, 0, 0.5); border: 2px solid #00ffff; border-radius: 4px; min-height: 80px; color: #00ffff; font-family: 'Rajdhani', sans-serif; resize: vertical;"></textarea>
+                            <div style="margin-bottom: 20px;">
+                                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #00ffff; font-family: 'Orbitron', monospace; font-size: 0.95em;">${label}${required ? ' <span style="color: #ff0064;">*</span>' : ''}</label>
+                                <textarea name="${field.name}" class="form-input" ${required} placeholder="${placeholder}" style="width: 100%; padding: 12px; background: rgba(0, 0, 0, 0.6); border: 2px solid #00ffff; border-radius: 6px; min-height: 100px; color: #00ffff; font-family: 'Rajdhani', sans-serif; resize: vertical; font-size: 1em; box-sizing: border-box;"></textarea>
                             </div>
                         `;
                     } else {
                         formHtml += `
-                            <div style="margin-bottom: 15px;">
-                                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #00ffff; font-family: 'Orbitron', monospace;">${label}</label>
-                                <input type="${field.type || 'text'}" name="${field.name}" class="form-input" ${required} placeholder="${placeholder}" style="width: 100%; padding: 10px; background: rgba(0, 0, 0, 0.5); border: 2px solid #00ffff; border-radius: 4px; color: #00ffff; font-family: 'Rajdhani', sans-serif; font-weight: 500;">
+                            <div style="margin-bottom: 20px;">
+                                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #00ffff; font-family: 'Orbitron', monospace; font-size: 0.95em;">${label}${required ? ' <span style="color: #ff0064;">*</span>' : ''}</label>
+                                <input type="${field.type || 'text'}" name="${field.name}" class="form-input" ${required} placeholder="${placeholder}" style="width: 100%; padding: 12px; background: rgba(0, 0, 0, 0.6); border: 2px solid #00ffff; border-radius: 6px; color: #00ffff; font-family: 'Rajdhani', sans-serif; font-weight: 500; font-size: 1em; box-sizing: border-box;">
                             </div>
                         `;
                     }
@@ -693,9 +722,9 @@
             });
             
             formHtml += `
-                    <div style="display: flex; gap: 10px; margin-top: 25px;">
-                        <button type="submit" style="flex: 1; padding: 12px; background: rgba(0, 255, 136, 0.3); color: #00ff88; border: 2px solid #00ff88; border-radius: 4px; cursor: pointer; font-weight: 700; font-family: 'Orbitron', monospace; box-shadow: 0 0 10px rgba(0, 255, 136, 0.5); transition: all 0.3s ease;">Submit</button>
-                        <button type="button" onclick="this.closest('div[style*=\"position: fixed\"]').remove()" style="flex: 1; padding: 12px; background: rgba(255, 255, 255, 0.1); color: #00ffff; border: 2px solid #00ffff; border-radius: 4px; cursor: pointer; font-weight: 600; font-family: 'Orbitron', monospace; transition: all 0.3s ease;">Cancel</button>
+                    <div style="display: flex; gap: 12px; margin-top: 30px;">
+                        <button type="submit" style="flex: 1; padding: 14px; background: rgba(0, 255, 136, 0.3); color: #00ff88; border: 2px solid #00ff88; border-radius: 6px; cursor: pointer; font-weight: 700; font-family: 'Orbitron', monospace; font-size: 1em; box-shadow: 0 0 10px rgba(0, 255, 136, 0.5); transition: all 0.3s ease;" onmouseover="this.style.background='rgba(0,255,136,0.5)'; this.style.boxShadow='0 0 20px rgba(0,255,136,0.8)'" onmouseout="this.style.background='rgba(0,255,136,0.3)'; this.style.boxShadow='0 0 10px rgba(0,255,136,0.5)'">Submit</button>
+                        <button type="button" id="cancelModalBtn" style="flex: 1; padding: 14px; background: rgba(255, 0, 100, 0.2); color: #ff0064; border: 2px solid #ff0064; border-radius: 6px; cursor: pointer; font-weight: 600; font-family: 'Orbitron', monospace; font-size: 1em; transition: all 0.3s ease;" onmouseover="this.style.background='rgba(255,0,100,0.4)'" onmouseout="this.style.background='rgba(255,0,100,0.2)'">Cancel</button>
                     </div>
                 </form>
             `;
@@ -704,16 +733,45 @@
             modal.appendChild(formDiv);
             document.body.appendChild(modal);
             
+            // Close modal function
+            function closeContactModal() {
+                const modal = document.getElementById('contactModal');
+                if (modal) {
+                    modal.remove();
+                }
+            }
+            
+            // Add close button handlers
+            const closeBtn = formDiv.querySelector('#closeModalBtn');
+            const cancelBtn = formDiv.querySelector('#cancelModalBtn');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', closeContactModal);
+            }
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', closeContactModal);
+            }
+            
+            // Close on Escape key
+            const handleEscape = (e) => {
+                if (e.key === 'Escape') {
+                    closeContactModal();
+                    document.removeEventListener('keydown', handleEscape);
+                }
+            };
+            document.addEventListener('keydown', handleEscape);
+            
             // Add focus styles to form inputs
             const formInputs = formDiv.querySelectorAll('.form-input');
             formInputs.forEach(input => {
                 input.addEventListener('focus', function() {
                     this.style.borderColor = '#00ff88';
-                    this.style.boxShadow = '0 0 10px rgba(0, 255, 136, 0.5)';
+                    this.style.boxShadow = '0 0 15px rgba(0, 255, 136, 0.6)';
+                    this.style.background = 'rgba(0, 0, 0, 0.8)';
                 });
                 input.addEventListener('blur', function() {
                     this.style.borderColor = '#00ffff';
                     this.style.boxShadow = 'none';
+                    this.style.background = 'rgba(0, 0, 0, 0.6)';
                 });
             });
             
@@ -740,7 +798,7 @@
                 .then(data => {
                     if (data.success) {
                         showAlert('Contact information submitted successfully!', 'success');
-                        modal.remove();
+                        closeContactModal();
                         updateStatus();
                     } else {
                         const errorMsg = data.message || 'Failed to submit';
@@ -752,6 +810,14 @@
                     showAlert('Error: ' + err.message, 'error');
                 });
             });
+            
+            // Prevent form submission from closing modal on error
+            const form = formDiv.querySelector('#contactForm');
+            if (form) {
+                form.addEventListener('submit', function(e) {
+                    // Form submission is handled by the fetch above
+                });
+            }
         }
         
         function updateSportRow(sportId) {

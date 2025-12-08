@@ -83,15 +83,41 @@ class TelegramNotifier:
             logger.error(f"Unexpected error sending Telegram message: {str(e)}")
             return False
     
-    def notify_slot_found(self, slot: dict) -> bool:
-        """Notify about a found slot"""
-        message = (
-            f"🏸 <b>Badminton Slot Found!</b>\n\n"
-            f"📅 Date: {slot.get('date', 'N/A')}\n"
-            f"⏰ Time: {slot.get('time', 'N/A')}\n"
-            f"🕐 Full: {slot.get('full_datetime', 'N/A')}\n\n"
-            f"Slot is available for booking!"
-        )
+    def notify_slot_found(self, slots: list, activity_type: str = 'badminton-16+') -> bool:
+        """Notify about found slots - shows all available slots"""
+        from config import BOOKING_BASE_URL, ACTIVITY_DISPLAY_NAMES
+        
+        activity_name = ACTIVITY_DISPLAY_NAMES.get(activity_type, activity_type)
+        booking_url = BOOKING_BASE_URL
+        
+        if not slots:
+            return False
+        
+        if len(slots) == 1:
+            slot = slots[0]
+            message = (
+                f"🏸 <b>{activity_name} Slot Found!</b>\n\n"
+                f"📅 Date: {slot.get('date', 'N/A')}\n"
+                f"⏰ Time: {slot.get('time', 'N/A')}\n"
+                f"🕐 Full: {slot.get('full_datetime', 'N/A')}\n\n"
+                f"Slot is available for booking!\n\n"
+                f"🔗 <a href='{booking_url}'>Book Now</a>"
+            )
+        else:
+            # Show all slots
+            slots_text = "\n".join([
+                f"• {slot.get('full_datetime', f\"{slot.get('date', 'N/A')} {slot.get('time', 'N/A')}\")}"
+                for slot in slots[:10]  # Limit to first 10 slots
+            ])
+            if len(slots) > 10:
+                slots_text += f"\n... and {len(slots) - 10} more slots"
+            
+            message = (
+                f"🏸 <b>{activity_name} - {len(slots)} Slots Found!</b>\n\n"
+                f"{slots_text}\n\n"
+                f"🔗 <a href='{booking_url}'>View All & Book</a>"
+            )
+        
         return self.send_message(message)
     
     def notify_booking_success(self, slot: dict, booking_result: dict) -> bool:
