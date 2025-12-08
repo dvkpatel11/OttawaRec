@@ -105,10 +105,15 @@ class TelegramNotifier:
             )
         else:
             # Show all slots
-            slots_text = "\n".join([
-                f"• {slot.get('full_datetime', f\"{slot.get('date', 'N/A')} {slot.get('time', 'N/A')}\")}"
-                for slot in slots[:10]  # Limit to first 10 slots
-            ])
+            slots_list = []
+            for slot in slots[:10]:  # Limit to first 10 slots
+                full_datetime = slot.get('full_datetime')
+                if not full_datetime:
+                    date = slot.get('date', 'N/A')
+                    time = slot.get('time', 'N/A')
+                    full_datetime = f"{date} {time}"
+                slots_list.append(f"• {full_datetime}")
+            slots_text = "\n".join(slots_list)
             if len(slots) > 10:
                 slots_text += f"\n... and {len(slots) - 10} more slots"
             
