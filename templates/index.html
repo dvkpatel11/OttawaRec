@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ottawa Rec Booking</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Rajdhani', sans-serif;
+            background: #0a0e27;
+            background-image: 
+                radial-gradient(circle at 20% 50%, rgba(0, 255, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(255, 0, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 40% 20%, rgba(0, 255, 0, 0.05) 0%, transparent 50%);
+            color: #00ffff;
+            padding: 10px;
+            min-height: 100vh;
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                padding: 10px 5px;
+            }
+            
+            h1 {
+                font-size: 2em !important;
+                letter-spacing: 1px !important;
+            }
+            
+            .subtitle {
+                font-size: 1em !important;
+            }
+            
+            .table-container {
+                overflow-x: auto;
+                overflow-y: visible;
+                -webkit-overflow-scrolling: touch;
+                width: 100%;
+                max-width: 100vw;
+                display: block;
+            }
+            
+            table {
+                min-width: 600px;
+                width: 100%;
+                display: table;
+            }
+            
+            th, td {
+                padding: 12px 8px !important;
+                font-size: 0.85em !important;
+            }
+            
+            th {
+                font-size: 0.75em !important;
+                letter-spacing: 1px !important;
+            }
+            
+            .sport-name {
+                font-size: 1em !important;
+            }
+            
+            .status-text {
+                font-size: 0.85em !important;
+            }
+            
+            .countdown-timer {
+                font-size: 0.9em !important;
+                display: block;
+                margin-top: 4px;
+            }
+            
+            .group-size-input {
+                width: 60px !important;
+                padding: 8px !important;
+                font-size: 0.9em !important;
+            }
+            
+            button {
+                padding: 10px 16px !important;
+                font-size: 0.9em !important;
+                min-width: 44px;
+                min-height: 44px;
+            }
+            
+            .button-group {
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 20px;
+            border-bottom: 2px solid #00ffff;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+        }
+        
+        h1 {
+            font-family: 'Orbitron', monospace;
+            color: #00ffff;
+            margin-bottom: 10px;
+            font-size: 3em;
+            font-weight: 700;
+            text-shadow: 
+                0 0 10px rgba(0, 255, 255, 0.8),
+                0 0 20px rgba(0, 255, 255, 0.5),
+                0 0 30px rgba(0, 255, 255, 0.3);
+            letter-spacing: 3px;
+        }
+        
+        .subtitle {
+            color: #00ff88;
+            font-size: 1.2em;
+            font-weight: 500;
+            letter-spacing: 2px;
+        }
+        
+        .table-container {
+            background: rgba(10, 14, 39, 0.8);
+            border: 2px solid #00ffff;
+            border-radius: 8px;
+            box-shadow: 
+                0 0 20px rgba(0, 255, 255, 0.3),
+                inset 0 0 20px rgba(0, 255, 255, 0.1);
+            overflow-x: auto;
+            overflow-y: visible;
+            backdrop-filter: blur(10px);
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        thead {
+            background: linear-gradient(135deg, rgba(0, 255, 255, 0.2) 0%, rgba(255, 0, 255, 0.2) 100%);
+            border-bottom: 2px solid #00ffff;
+        }
+        
+        th {
+            padding: 20px;
+            text-align: left;
+            font-weight: 700;
+            font-size: 1.1em;
+            font-family: 'Orbitron', monospace;
+            color: #00ffff;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px rgba(0, 255, 255, 0.8);
+        }
+        
+        th:first-child {
+            width: 20%;
+        }
+        
+        th:nth-child(2) {
+            width: 12%;
+        }
+        
+        th:nth-child(3) {
+            width: 25%;
+        }
+        
+        th:nth-child(4) {
+            width: 15%;
+        }
+        
+        th:last-child {
+            width: 28%;
+        }
+        
+        tbody tr {
+            border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+            transition: all 0.3s ease;
+        }
+        
+        tbody tr:hover {
+            background-color: rgba(0, 255, 255, 0.1);
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+        }
+        
+        tbody tr:last-child {
+            border-bottom: none;
+        }
+        
+        td {
+            padding: 20px;
+            vertical-align: middle;
+        }
+        
+        .sport-name {
+            font-weight: 600;
+            color: #00ffff;
+            font-size: 1.2em;
+            font-family: 'Orbitron', monospace;
+            text-shadow: 0 0 5px rgba(0, 255, 255, 0.5);
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-indicator.active {
+            background: #00ff88;
+            box-shadow: 0 0 10px #00ff88, 0 0 20px #00ff88;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .status-indicator.inactive {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .status-text {
+            color: #00ffff;
+            font-size: 0.95em;
+            font-weight: 500;
+        }
+        
+        .countdown-timer {
+            color: #00ff88;
+            font-family: 'Orbitron', monospace;
+            font-weight: 700;
+            font-size: 0.95em;
+            margin-left: 12px;
+            text-shadow: 0 0 5px rgba(0, 255, 136, 0.5);
+            display: inline-block;
+            white-space: nowrap;
+        }
+        
+        .status-cell {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .status-cell > span:first-child {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        @media (max-width: 768px) {
+            .countdown-timer {
+                margin-left: 0;
+                margin-top: 4px;
+                display: block;
+                font-size: 0.85em;
+            }
+            
+            .status-cell {
+                gap: 2px;
+            }
+        }
+        
+        .group-size-input {
+            width: 80px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #00ffff;
+            border-radius: 4px;
+            font-size: 1em;
+            text-align: center;
+            color: #00ffff;
+            font-family: 'Orbitron', monospace;
+            font-weight: 600;
+        }
+        
+        .group-size-input::placeholder {
+            color: rgba(0, 255, 255, 0.5);
+        }
+        
+        .group-size-input:focus {
+            outline: none;
+            border-color: #00ff88;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+        }
+        
+        .group-size-input:disabled {
+            background-color: rgba(0, 0, 0, 0.3);
+            border-color: rgba(0, 255, 255, 0.3);
+            color: rgba(0, 255, 255, 0.5);
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        
+        .form-input::placeholder {
+            color: rgba(0, 255, 255, 0.5);
+        }
+        
+        .form-input option {
+            background: #0a0e27;
+            color: #00ffff;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
+        
+        button {
+            padding: 12px 24px;
+            font-size: 1em;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .btn-start {
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.3) 0%, rgba(0, 255, 255, 0.3) 100%);
+            color: #00ff88;
+            border: 2px solid #00ff88;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+        }
+        
+        .btn-start:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.8), 0 0 30px rgba(0, 255, 136, 0.5);
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.5) 0%, rgba(0, 255, 255, 0.5) 100%);
+        }
+        
+        .btn-stop {
+            background: rgba(255, 0, 100, 0.3);
+            color: #ff0064;
+            border: 2px solid #ff0064;
+            box-shadow: 0 0 10px rgba(255, 0, 100, 0.5);
+        }
+        
+        .btn-stop:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 0 20px rgba(255, 0, 100, 0.8), 0 0 30px rgba(255, 0, 100, 0.5);
+            background: rgba(255, 0, 100, 0.5);
+        }
+        
+        .btn-check {
+            background: rgba(0, 150, 255, 0.3);
+            color: #0096ff;
+            border: 2px solid #0096ff;
+            box-shadow: 0 0 10px rgba(0, 150, 255, 0.5);
+        }
+        
+        .btn-check:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 0 20px rgba(0, 150, 255, 0.8), 0 0 30px rgba(0, 150, 255, 0.5);
+            background: rgba(0, 150, 255, 0.5);
+        }
+        
+        button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        
+        
+        .alert {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .alert-success {
+            background: rgba(0, 255, 136, 0.2);
+            color: #00ff88;
+            border-left: 4px solid #00ff88;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+        }
+        
+        .alert-error {
+            background: rgba(255, 0, 100, 0.2);
+            color: #ff0064;
+            border-left: 4px solid #ff0064;
+            box-shadow: 0 0 10px rgba(255, 0, 100, 0.5);
+        }
+        
+        .alert-info {
+            background: rgba(0, 255, 255, 0.2);
+            color: #00ffff;
+            border-left: 4px solid #00ffff;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🏸 Ottawa Rec Booking</h1>
+    </div>
+    
+    <div id="alerts"></div>
+    
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Sport</th>
+                    <th>Group Size</th>
+                    <th>Actions</th>
+                    <th>Status</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody id="sportsTable">
+                <!-- Rows will be populated by JavaScript -->
+            </tbody>
+        </table>
+    </div>
+    
+    <script>
+        const sports = [
+            { id: 'badminton-16+', name: 'Badminton (16+)', groupSizeRequired: true },
+            { id: 'badminton-family', name: 'Badminton (Family)', groupSizeRequired: false },
+            { id: 'pickleball', name: 'Pickleball', groupSizeRequired: true }
+        ];
+        
+        const monitoringState = {};
+        const checkingState = {}; // Track which sports are currently being checked
+        const countdownTimers = {}; // Track countdown timers for each sport
+        const lastCheckTimes = {}; // Track when each sport was last checked
+        const CHECK_INTERVAL = 300; // 5 minutes in seconds
+        
+        function showAlert(message, type = 'info') {
+            const alerts = document.getElementById('alerts');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            alerts.appendChild(alert);
+            
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+        
+        function updateStatus() {
+            fetch('/api/status')
+                .then(res => res.json())
+                .then(data => {
+                    // Update each sport's status
+                    sports.forEach(sport => {
+                        const state = data.processes?.[sport.id] || { active: false };
+                        const currentState = monitoringState[sport.id] || {};
+                        
+                        // Track when monitoring becomes active to start countdown
+                        if (state.active && !currentState.active) {
+                            // Just started monitoring - set last check time to now
+                            lastCheckTimes[sport.id] = Date.now();
+                            startCountdown(sport.id);
+                        } else if (!state.active && currentState.active) {
+                            // Just stopped monitoring - clear countdown
+                            stopCountdown(sport.id);
+                            delete lastCheckTimes[sport.id];
+                        } else if (state.active) {
+                            // Monitoring is active - ensure countdown is running
+                            // If we have slots data, it means a check just completed, reset timer
+                            if (state.slots !== undefined) {
+                                // Check completed - reset countdown if we don't have a last check time
+                                // or if it's been more than CHECK_INTERVAL seconds
+                                if (!lastCheckTimes[sport.id]) {
+                                    lastCheckTimes[sport.id] = Date.now();
+                                }
+                                // Ensure countdown is running
+                                if (!countdownTimers[sport.id]) {
+                                    startCountdown(sport.id);
+                                }
+                            }
+                        }
+                        
+                        // Merge state: preserve slots from checkNow() unless process is active and has new slots
+                        if (state.active && state.slots !== undefined) {
+                            // Active monitoring - update with new slots
+                            monitoringState[sport.id] = {
+                                ...currentState,
+                                ...state,
+                                slots: state.slots
+                            };
+                        } else {
+                            // Not active - preserve existing slots from checkNow(), but update other fields
+                            monitoringState[sport.id] = {
+                                ...currentState,
+                                ...state,
+                                slots: currentState.slots !== undefined ? currentState.slots : state.slots
+                            };
+                        }
+                        updateSportRow(sport.id);
+                    });
+                })
+                .catch(err => console.error('Status check failed:', err));
+        }
+        
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+        
+        function updateCountdown(sportId) {
+            // Check if monitoring is still active
+            if (!monitoringState[sportId]?.active) {
+                return;
+            }
+            
+            if (!lastCheckTimes[sportId]) {
+                // If no last check time but monitoring is active, set it to now
+                lastCheckTimes[sportId] = Date.now();
+            }
+            
+            const now = Date.now();
+            const elapsed = Math.floor((now - lastCheckTimes[sportId]) / 1000);
+            const remaining = Math.max(0, CHECK_INTERVAL - elapsed);
+            
+            const statusCell = document.querySelector(`#row-${sportId} .status-cell`);
+            if (!statusCell) {
+                return;
+            }
+            
+            let timerElement = statusCell.querySelector('.countdown-timer');
+            
+            // Create timer element if it doesn't exist
+            if (!timerElement) {
+                timerElement = document.createElement('span');
+                timerElement.className = 'countdown-timer';
+                statusCell.appendChild(timerElement);
+            }
+            
+            // Update timer text
+            if (remaining > 0) {
+                timerElement.textContent = `Next check in ${formatTime(remaining)}`;
+            } else {
+                timerElement.textContent = 'Checking...';
+                // Reset countdown after check completes
+                if (monitoringState[sportId]?.active) {
+                    lastCheckTimes[sportId] = Date.now();
+                }
+            }
+        }
+        
+        function startCountdown(sportId) {
+            // Clear any existing timer
+            stopCountdown(sportId);
+            
+            // Update immediately
+            updateCountdown(sportId);
+            
+            // Update every second
+            countdownTimers[sportId] = setInterval(() => {
+                updateCountdown(sportId);
+            }, 1000);
+        }
+        
+        function stopCountdown(sportId) {
+            if (countdownTimers[sportId]) {
+                clearInterval(countdownTimers[sportId]);
+                delete countdownTimers[sportId];
+            }
+            
+            const statusCell = document.querySelector(`#row-${sportId} .status-cell`);
+            if (statusCell) {
+                const timerElement = statusCell.querySelector('.countdown-timer');
+                if (timerElement) {
+                    timerElement.remove();
+                }
+            }
+        }
+        
+        function selectSlot(sportId, slotIndex) {
+            const state = monitoringState[sportId];
+            if (!state || !state.slots || !state.slots[slotIndex]) {
+                showAlert('Slot not available', 'error');
+                return;
+            }
+            
+            const slot = state.slots[slotIndex];
+            const groupSize = parseInt(document.getElementById(`group-${sportId}`).value) || 2;
+            
+            showAlert('Selecting slot and loading contact form...', 'info');
+            
+            fetch('/api/select-slot', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    activity_type: sportId,
+                    slot_data: slot,
+                    group_size: groupSize
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.fields) {
+                    showContactForm(sportId, slot, data.fields, data.csrf_token);
+                } else {
+                    const errorMsg = data.message || 'Failed to load contact form';
+                    const errorType = data.error_type ? ` (${data.error_type})` : '';
+                    showAlert(`${errorMsg}${errorType}`, 'error');
+                }
+            })
+            .catch(err => {
+                showAlert('Error: ' + err.message, 'error');
+            });
+        }
+        
+        function showContactForm(sportId, slot, fields, csrfToken) {
+            // Create modal or form display
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; display: flex; align-items: center; justify-content: center;';
+            
+            const formDiv = document.createElement('div');
+            formDiv.style.cssText = 'background: white; padding: 20px; border-radius: 8px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;';
+            
+            let formHtml = `
+                <h3 style="margin-bottom: 20px; font-family: 'Orbitron', monospace; color: #00ffff; text-shadow: 0 0 10px rgba(0, 255, 255, 0.8); font-size: 1.5em; font-weight: 700;">Contact Information</h3>
+                <div style="margin-bottom: 20px; color: #00ff88; font-weight: 600; font-family: 'Orbitron', monospace;">${slot.full_datetime || slot.date + ' ' + slot.time}</div>
+                <form id="contactForm">
+                    <input type="hidden" name="csrf_token" value="${csrfToken || ''}">
+            `;
+            
+            fields.forEach(field => {
+                if (field.name && field.name !== '__RequestVerificationToken') {
+                    const label = field.label || field.name;
+                    const required = field.required ? 'required' : '';
+                    const placeholder = field.placeholder || '';
+                    
+                    if (field.type === 'select') {
+                        let optionsHtml = '<option value="" style="background: #0a0e27;">Select...</option>';
+                        if (field.options && Array.isArray(field.options)) {
+                            field.options.forEach(option => {
+                                const optionValue = option.value || '';
+                                const optionText = option.text || optionValue;
+                                optionsHtml += `<option value="${optionValue}" style="background: #0a0e27;">${optionText}</option>`;
+                            });
+                        }
+                        formHtml += `
+                            <div style="margin-bottom: 15px;">
+                                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #00ffff; font-family: 'Orbitron', monospace;">${label}</label>
+                                <select name="${field.name}" class="form-input" ${required} style="width: 100%; padding: 10px; background: rgba(0, 0, 0, 0.5); border: 2px solid #00ffff; border-radius: 4px; color: #00ffff; font-family: 'Rajdhani', sans-serif; font-weight: 500;">
+                                    ${optionsHtml}
+                                </select>
+                            </div>
+                        `;
+                    } else if (field.type === 'textarea') {
+                        formHtml += `
+                            <div style="margin-bottom: 15px;">
+                                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #00ffff; font-family: 'Orbitron', monospace;">${label}</label>
+                                <textarea name="${field.name}" class="form-input" ${required} placeholder="${placeholder}" style="width: 100%; padding: 10px; background: rgba(0, 0, 0, 0.5); border: 2px solid #00ffff; border-radius: 4px; min-height: 80px; color: #00ffff; font-family: 'Rajdhani', sans-serif; resize: vertical;"></textarea>
+                            </div>
+                        `;
+                    } else {
+                        formHtml += `
+                            <div style="margin-bottom: 15px;">
+                                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #00ffff; font-family: 'Orbitron', monospace;">${label}</label>
+                                <input type="${field.type || 'text'}" name="${field.name}" class="form-input" ${required} placeholder="${placeholder}" style="width: 100%; padding: 10px; background: rgba(0, 0, 0, 0.5); border: 2px solid #00ffff; border-radius: 4px; color: #00ffff; font-family: 'Rajdhani', sans-serif; font-weight: 500;">
+                            </div>
+                        `;
+                    }
+                }
+            });
+            
+            formHtml += `
+                    <div style="display: flex; gap: 10px; margin-top: 25px;">
+                        <button type="submit" style="flex: 1; padding: 12px; background: rgba(0, 255, 136, 0.3); color: #00ff88; border: 2px solid #00ff88; border-radius: 4px; cursor: pointer; font-weight: 700; font-family: 'Orbitron', monospace; box-shadow: 0 0 10px rgba(0, 255, 136, 0.5); transition: all 0.3s ease;">Submit</button>
+                        <button type="button" onclick="this.closest('div[style*=\"position: fixed\"]').remove()" style="flex: 1; padding: 12px; background: rgba(255, 255, 255, 0.1); color: #00ffff; border: 2px solid #00ffff; border-radius: 4px; cursor: pointer; font-weight: 600; font-family: 'Orbitron', monospace; transition: all 0.3s ease;">Cancel</button>
+                    </div>
+                </form>
+            `;
+            
+            formDiv.innerHTML = formHtml;
+            modal.appendChild(formDiv);
+            document.body.appendChild(modal);
+            
+            // Add focus styles to form inputs
+            const formInputs = formDiv.querySelectorAll('.form-input');
+            formInputs.forEach(input => {
+                input.addEventListener('focus', function() {
+                    this.style.borderColor = '#00ff88';
+                    this.style.boxShadow = '0 0 10px rgba(0, 255, 136, 0.5)';
+                });
+                input.addEventListener('blur', function() {
+                    this.style.borderColor = '#00ffff';
+                    this.style.boxShadow = 'none';
+                });
+            });
+            
+            // Handle form submission
+            document.getElementById('contactForm').addEventListener('submit', (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const fieldValues = {};
+                formData.forEach((value, key) => {
+                    if (key !== 'csrf_token') {
+                        fieldValues[key] = value;
+                    }
+                });
+                
+                fetch('/api/submit-contact', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        activity_type: sportId,
+                        field_values: fieldValues
+                    })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        showAlert('Contact information submitted successfully!', 'success');
+                        modal.remove();
+                        updateStatus();
+                    } else {
+                        const errorMsg = data.message || 'Failed to submit';
+                        const errorType = data.error_type ? ` (${data.error_type})` : '';
+                        showAlert(`${errorMsg}${errorType}`, 'error');
+                    }
+                })
+                .catch(err => {
+                    showAlert('Error: ' + err.message, 'error');
+                });
+            });
+        }
+        
+        function updateSportRow(sportId) {
+            const state = monitoringState[sportId] || { active: false };
+            const row = document.getElementById(`row-${sportId}`);
+            if (!row) return;
+            
+            const statusCell = row.querySelector('.status-cell');
+            const startBtn = row.querySelector('.btn-start');
+            const stopBtn = row.querySelector('.btn-stop');
+            const checkBtn = row.querySelector('.btn-check');
+            const detailsCell = row.querySelector('.details-cell');
+            
+            if (state.active) {
+                // Show monitoring status with countdown timer
+                // Don't replace innerHTML if timer exists - just update the status parts
+                const existingTimer = statusCell.querySelector('.countdown-timer');
+                const existingIndicator = statusCell.querySelector('.status-indicator');
+                const existingStatusText = statusCell.querySelector('.status-text');
+                
+                // Preserve timer if it exists
+                const timerText = existingTimer ? existingTimer.textContent : '';
+                
+                // Only update if elements don't exist
+                if (!existingIndicator || !existingStatusText) {
+                    // Create status indicator and text if missing
+                    const statusWrapper = document.createElement('span');
+                    statusWrapper.innerHTML = `
+                        <span class="status-indicator active"></span>
+                        <span class="status-text">Monitoring</span>
+                    `;
+                    // Clear and rebuild, but preserve timer
+                    if (existingTimer) {
+                        existingTimer.remove();
+                    }
+                    statusCell.innerHTML = '';
+                    statusCell.appendChild(statusWrapper);
+                } else {
+                    // Just ensure indicator is active
+                    existingIndicator.className = 'status-indicator active';
+                    existingStatusText.textContent = 'Monitoring';
+                }
+                
+                // Ensure countdown timer exists (re-add if it was removed)
+                if (!statusCell.querySelector('.countdown-timer')) {
+                    const timerElement = document.createElement('span');
+                    timerElement.className = 'countdown-timer';
+                    timerElement.textContent = timerText || 'Next check in 5:00';
+                    statusCell.appendChild(timerElement);
+                }
+                
+                // Ensure countdown is running
+                if (!countdownTimers[sportId]) {
+                    if (!lastCheckTimes[sportId]) {
+                        lastCheckTimes[sportId] = Date.now();
+                    }
+                    startCountdown(sportId);
+                } else {
+                    // Update countdown immediately if timer is already running
+                    updateCountdown(sportId);
+                }
+                
+                if (startBtn) startBtn.disabled = true;
+                if (stopBtn) stopBtn.disabled = false;
+                if (checkBtn) checkBtn.disabled = true;
+            } else {
+                statusCell.innerHTML = '<span class="status-indicator inactive"></span><span class="status-text">Ready</span>';
+                // Stop countdown if monitoring is not active
+                stopCountdown(sportId);
+                if (startBtn) startBtn.disabled = false;
+                if (stopBtn) stopBtn.disabled = true;
+                if (checkBtn) checkBtn.disabled = false;
+            }
+            
+            // Always show details from latest check (even if no slots found)
+            // Check if we have slots data (even if empty array)
+            if (state.slots !== undefined) {
+                // Filter out disabled/unavailable slots (show only available ones)
+                const availableSlots = state.slots.filter(slot => {
+                    return !slot.disabled && slot.available !== false;
+                });
+                
+                // Extract filename from screenshot path (handle both / and \ separators)
+                let screenshotFilename = '';
+                if (state.screenshot) {
+                    const pathParts = state.screenshot.replace(/\\/g, '/').split('/');
+                    screenshotFilename = pathParts[pathParts.length - 1];
+                }
+                const screenshotLink = screenshotFilename ? 
+                    `<a href="/screenshots/${screenshotFilename}" target="_blank" class="detail-link" style="display: block; margin-top: 8px; color: #00ffff; text-decoration: none; font-weight: 600;">📄 View Details</a>` : '';
+                
+                const pageLink = `https://reservation.frontdesksuite.ca/rcfs/cardelrec`;
+                
+                if (availableSlots.length > 0) {
+                    const slotsHtml = availableSlots.map((slot, index) => {
+                        const slotTime = slot.full_datetime || `${slot.date} ${slot.time}`;
+                        // Find original index in state.slots for selectSlot function
+                        const originalIndex = state.slots.indexOf(slot);
+                        return `
+                            <div style="margin-bottom: 8px; padding: 12px; background: rgba(0, 255, 255, 0.1); border: 1px solid rgba(0, 255, 255, 0.3); border-radius: 4px; box-shadow: 0 0 5px rgba(0, 255, 255, 0.2);">
+                                <div style="margin-bottom: 6px; font-weight: 600; color: #00ffff; font-family: 'Orbitron', monospace;">${slotTime}</div>
+                                <button onclick="selectSlot('${sportId}', ${originalIndex})" class="btn-book-slot" style="padding: 6px 16px; font-size: 0.85em; cursor: pointer; border-radius: 4px; background: rgba(0, 255, 136, 0.3); color: #00ff88; border: 2px solid #00ff88; font-weight: 600;">Book</button>
+                            </div>
+                        `;
+                    }).join('');
+                    
+                    detailsCell.innerHTML = `
+                        <div>
+                            <div style="margin-bottom: 8px; font-weight: 700; color: #00ff88; font-family: 'Orbitron', monospace; text-shadow: 0 0 5px rgba(0, 255, 136, 0.5);">${availableSlots.length} slot(s) available</div>
+                            ${slotsHtml}
+                            ${screenshotLink}
+                            <a href="${pageLink}" target="_blank" class="detail-link" style="display: block; margin-top: 8px; color: #00ffff; text-decoration: none; font-weight: 600;">🔗 Booking Page</a>
+                        </div>
+                    `;
+                } else {
+                    // No available slots - show message and links
+                    detailsCell.innerHTML = `
+                        <div>
+                            <div style="margin-bottom: 8px; color: rgba(255, 255, 255, 0.6); font-weight: 500;">No available slots</div>
+                            ${screenshotLink}
+                            <a href="${pageLink}" target="_blank" class="detail-link" style="display: block; margin-top: 8px; color: #00ffff; text-decoration: none; font-weight: 600;">🔗 Booking Page</a>
+                        </div>
+                    `;
+                }
+            } else if (state.screenshot) {
+                // Has screenshot but no slots data yet
+                const pathParts = state.screenshot.replace(/\\/g, '/').split('/');
+                const filename = pathParts[pathParts.length - 1];
+                const detailLink = `/screenshots/${filename}`;
+                const pageLink = `https://reservation.frontdesksuite.ca/rcfs/cardelrec`;
+                detailsCell.innerHTML = `
+                    <div style="display: flex; flex-direction: column; gap: 5px;">
+                        <a href="${detailLink}" target="_blank" class="detail-link" style="color: #00ffff; text-decoration: none; font-weight: 600;">📄 View Details</a>
+                        <a href="${pageLink}" target="_blank" class="detail-link" style="color: #00ffff; text-decoration: none; font-weight: 600;">🔗 Booking Page</a>
+                    </div>
+                `;
+            } else {
+                detailsCell.innerHTML = '<span style="color: rgba(0, 255, 255, 0.5);">No details yet</span>';
+            }
+        }
+        
+        function renderTable() {
+            const tbody = document.getElementById('sportsTable');
+            tbody.innerHTML = sports.map(sport => `
+                <tr id="row-${sport.id}">
+                    <td class="sport-name">${sport.name}</td>
+                    <td>
+                        <input type="number" class="group-size-input" id="group-${sport.id}" min="1" max="10" value="2" ${!sport.groupSizeRequired ? 'disabled' : ''}>
+                    </td>
+                    <td>
+                        <div class="button-group">
+                            <button class="btn-start" onclick="startMonitoring('${sport.id}')" title="Start Monitoring">▶</button>
+                            <button class="btn-stop" onclick="stopMonitoring('${sport.id}')" disabled title="Stop Monitoring">⏹</button>
+                            <button class="btn-check" onclick="checkNow('${sport.id}')" title="Check Now">🔍</button>
+                        </div>
+                    </td>
+                    <td class="status-cell">
+                        <span class="status-indicator inactive"></span>
+                        <span class="status-text">Ready</span>
+                    </td>
+                    <td class="details-cell">
+                        <span style="color: #999;">No details yet</span>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        function startMonitoring(sportId) {
+            const groupSize = parseInt(document.getElementById(`group-${sportId}`).value) || 2;
+            
+            if (groupSize < 1 || groupSize > 10) {
+                showAlert('Group size must be between 1 and 10', 'error');
+                return;
+            }
+            
+            fetch('/api/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    activity_type: sportId,
+                    group_size: groupSize
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert(`Monitoring started for ${sports.find(s => s.id === sportId).name}`, 'success');
+                    // Set last check time to now to start countdown
+                    lastCheckTimes[sportId] = Date.now();
+                    updateStatus();
+                } else {
+                    showAlert(data.message || 'Failed to start', 'error');
+                }
+            })
+            .catch(err => {
+                showAlert('Error: ' + err.message, 'error');
+            });
+        }
+        
+        function stopMonitoring(sportId) {
+            fetch('/api/stop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ activity_type: sportId })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert(`Monitoring stopped for ${sports.find(s => s.id === sportId).name}`, 'info');
+                    updateStatus();
+                } else {
+                    showAlert(data.message || 'Failed to stop', 'error');
+                }
+            })
+            .catch(err => {
+                showAlert('Error: ' + err.message, 'error');
+            });
+        }
+        
+        function checkNow(sportId) {
+            // Prevent multiple simultaneous checks
+            if (checkingState[sportId]) {
+                return;
+            }
+            
+            const row = document.getElementById(`row-${sportId}`);
+            if (!row) {
+                showAlert('Error: Row not found', 'error');
+                return;
+            }
+            
+            const groupSizeInput = document.getElementById(`group-${sportId}`);
+            const groupSize = groupSizeInput ? (parseInt(groupSizeInput.value) || 2) : 2;
+            
+            if (groupSize < 1 || groupSize > 10) {
+                showAlert('Group size must be between 1 and 10', 'error');
+                return;
+            }
+            
+            const checkBtn = row.querySelector('.btn-check');
+            if (!checkBtn) {
+                showAlert('Error: Check button not found', 'error');
+                return;
+            }
+            
+            // Mark as checking and disable button
+            checkingState[sportId] = true;
+            checkBtn.disabled = true;
+            
+            // Single check - don't trigger status polling
+            fetch('/api/check-now', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    activity_type: sportId,
+                    group_size: groupSize
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                // Always update state with check result (even if no slots found)
+                if (!monitoringState[sportId]) {
+                    monitoringState[sportId] = {};
+                }
+                // Update slots (empty array if none found)
+                monitoringState[sportId].slots = data.slots || [];
+                // Update screenshot if available
+                if (data.screenshot) {
+                    monitoringState[sportId].screenshot = data.screenshot;
+                }
+                // Always update the row to show latest check result (single update, no polling)
+                updateSportRow(sportId);
+                
+                if (data.success && data.slots && data.slots.length > 0) {
+                    showAlert(`Found ${data.slots.length} available slot(s)`, 'success');
+                } else if (!data.success) {
+                    // Show error message with details
+                    const errorMsg = data.message || 'Failed to check for slots';
+                    const errorType = data.error_type || 'unknown';
+                    showAlert(`${errorMsg} (${errorType})`, 'error');
+                } else {
+                    showAlert(data.message || 'No slots found', 'info');
+                }
+            })
+            .catch(err => {
+                showAlert('Error: ' + err.message, 'error');
+            })
+            .finally(() => {
+                // Always re-enable button and clear checking state
+                checkingState[sportId] = false;
+                checkBtn.disabled = false;
+            });
+        }
+        
+        // Initialize
+        renderTable();
+        updateStatus();
+        setInterval(updateStatus, 3000);
+    </script>
+</body>
+</html>
