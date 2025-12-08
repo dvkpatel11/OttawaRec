@@ -510,7 +510,9 @@ if __name__ == '__main__':
         print("=" * 60)
         print("\nPress Ctrl+C to stop the server\n")
         
-        app.run(debug=False, host=FLASK_HOST, port=FLASK_PORT, use_reloader=False)
+        # Use PORT environment variable if available (for platforms like Railway, Render, etc.)
+        port = int(os.environ.get('PORT', FLASK_PORT))
+        app.run(debug=False, host=FLASK_HOST, port=port, use_reloader=False)
     except OSError as e:
         if "Address already in use" in str(e) or "address is already in use" in str(e).lower():
             logger.error(f"Port {FLASK_PORT} is already in use")
