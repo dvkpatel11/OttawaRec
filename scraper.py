@@ -1,6 +1,11 @@
 """
 Ottawa Recreation Booking Scraper
 Handles navigation and booking for Ottawa recreation facilities
+
+Note: As of 2024, racquet sports (Badminton, Pickleball) are now organized 
+under the "Gymnasium sports" category in the Ottawa recreation booking system.
+This scraper uses direct button IDs, so it bypasses category navigation and 
+works regardless of the category structure.
 """
 import requests
 from requests.exceptions import HTTPError
@@ -32,6 +37,12 @@ class OttawaRecBookingScraper:
         self.current_page_id = PAGE_ID
         self.last_check_time = None
         self.last_activity_url = None
+        self.last_page_html = None
+        self.activity_button_ids = {}  # Cache button IDs extracted at startup
+        # These will be set from the page during initialize_session():
+        self.initial_page_url = None  # URL of the initial booking page
+        self.booking_base_url = BOOKING_BASE_URL  # Can be updated from page
+        self.booking_cf_url = BOOKING_CF_URL  # Can be updated from page
         
     def _delay(self):
         """Add delay between requests"""
@@ -58,6 +69,158 @@ class OttawaRecBookingScraper:
             return session_input.get('value')
         return None
     
+    def _extract_page_id(self, html: str, url: str = None) -> Optional[str]:
+        """Extract page ID from HTML or URL"""
+        # First try to extract from URL
+        if url and 'PageId=' in url:
+            match = re.search(r'[Pp]ageId=([a-f0-9-]+)', url)
+            if match:
+                return match.group(1)
+        
+        # Try to extract from HTML - look for hidden inputs or JavaScript variables
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Look for hidden input with name containing 'page' or 'pageId'
+        page_inputs = soup.find_all('input', {'type': 'hidden'})
+        for inp in page_inputs:
+            name = inp.get('name', '').lower()
+            if 'pageid' in name or 'page_id' in name:
+                value = inp.get('value')
+                if value and re.match(r'^[a-f0-9-]+$', value):
+                    return value
+        
+        # Look for pageId in JavaScript variables
+        scripts = soup.find_all('script')
+        for script in scripts:
+            if script.string:
+                # Look for patterns like: var pageId = "...", pageId: "...", "pageId":"..."
+                matches = re.findall(r'[Pp]ageId["\']?\s*[:=]\s*["\']([a-f0-9-]+)["\']', script.string)
+                if matches:
+                    return matches[0]
+                # Also try PageId
+                matches = re.findall(r'[Pp]ageId["\']?\s*[:=]\s*["\']([a-f0-9-]+)["\']', script.string)
+                if matches:
+                    return matches[0]
+        
+        # Look for pageId in data attributes
+        elements = soup.find_all(attrs={'data-pageid': True})
+        if elements:
+            page_id = elements[0].get('data-pageid')
+            if page_id and re.match(r'^[a-f0-9-]+$', page_id):
+                return page_id
+        
+        return None
+    
+    def _parse_booking_page_structure(self, html: str) -> Dict:
+        """Parse the booking page to extract navigation structure
+        
+        Returns a dictionary with:
+        - buttons: List of button elements with their IDs and attributes
+        - links: List of navigation links with hrefs
+        - forms: List of forms with their actions and methods
+        - page_type: Type of page (initial, slot_count_selection, time_selection, etc.)
+        """
+        soup = BeautifulSoup(html, 'html.parser')
+        structure = {
+            'buttons': [],
+            'links': [],
+            'forms': [],
+            'page_type': 'unknown'
+        }
+        
+        # Determine page type
+        if 'TimeSelection' in html or soup.find('div', class_='date'):
+            structure['page_type'] = 'time_selection'
+        elif 'SlotCountSelection' in html or soup.find('input', {'name': 'reservationCount'}):
+            structure['page_type'] = 'slot_count_selection'
+        elif 'StartReservation' in html or soup.find_all('button', class_=re.compile(r'activity|sport', re.I)):
+            structure['page_type'] = 'initial'
+        elif 'ContactInfo' in html:
+            structure['page_type'] = 'contact_info'
+        
+        # Extract all buttons with potential button IDs
+        buttons = soup.find_all(['button', 'a', 'input'], attrs={'type': ['button', 'submit']})
+        buttons.extend(soup.find_all(['a', 'button'], class_=re.compile(r'btn|button|link', re.I)))
+        
+        for btn in buttons:
+            button_info = {
+                'element': str(btn),
+                'text': btn.get_text(strip=True),
+                'button_id': None,
+                'href': None,
+                'onclick': None,
+                'data_attrs': {}
+            }
+            
+            # Extract button ID from various attributes
+            button_id = (btn.get('data-buttonid') or 
+                        btn.get('data-button-id') or
+                        btn.get('data-id') or
+                        btn.get('id'))
+            
+            if button_id and re.match(r'^[a-f0-9-]+$', str(button_id)):
+                button_info['button_id'] = button_id
+            
+            # Extract href if it's a link
+            if btn.name == 'a':
+                button_info['href'] = btn.get('href')
+            
+            # Extract onclick handler
+            onclick = btn.get('onclick')
+            if onclick:
+                button_info['onclick'] = onclick
+                # Try to extract button ID from onclick
+                match = re.search(r'buttonId["\']?\s*[:=]\s*["\']([a-f0-9-]+)["\']', onclick)
+                if match:
+                    button_info['button_id'] = match.group(1)
+            
+            # Extract all data attributes
+            for attr in btn.attrs:
+                if attr.startswith('data-'):
+                    button_info['data_attrs'][attr] = btn.get(attr)
+            
+            if button_info['button_id'] or button_info['href'] or button_info['onclick']:
+                structure['buttons'].append(button_info)
+        
+        # Extract navigation links
+        links = soup.find_all('a', href=re.compile(r'ReserveTime|StartReservation|SlotCount|TimeSelection', re.I))
+        for link in links:
+            link_info = {
+                'href': link.get('href'),
+                'text': link.get_text(strip=True),
+                'full_url': None
+            }
+            # Resolve relative URLs
+            if link_info['href']:
+                if link_info['href'].startswith('http'):
+                    link_info['full_url'] = link_info['href']
+                elif link_info['href'].startswith('/'):
+                    link_info['full_url'] = f"{BOOKING_CF_URL}{link_info['href']}"
+            structure['links'].append(link_info)
+        
+        # Extract forms
+        forms = soup.find_all('form')
+        for form in forms:
+            form_info = {
+                'action': form.get('action'),
+                'method': form.get('method', 'get').lower(),
+                'inputs': []
+            }
+            
+            # Extract all form inputs
+            for inp in form.find_all(['input', 'select', 'textarea']):
+                input_info = {
+                    'name': inp.get('name'),
+                    'type': inp.get('type', 'text'),
+                    'value': inp.get('value', ''),
+                    'required': inp.has_attr('required')
+                }
+                form_info['inputs'].append(input_info)
+            
+            structure['forms'].append(form_info)
+        
+        return structure
+    
     def initialize_session(self) -> bool:
         """Initialize session with booking system"""
         try:
@@ -77,31 +240,214 @@ class OttawaRecBookingScraper:
             # Extract session ID and page ID from response
             self.current_session_id = self._extract_session_id(response.text)
             
-            # Try to extract page ID from URL or HTML
-            if 'PageId=' in response.url:
-                match = re.search(r'PageId=([a-f0-9-]+)', response.url)
-                if match:
-                    self.current_page_id = match.group(1)
+            # Extract page ID from HTML or URL (prefer HTML as it's more reliable)
+            extracted_page_id = self._extract_page_id(response.text, response.url)
+            if extracted_page_id:
+                old_page_id = self.current_page_id
+                self.current_page_id = extracted_page_id
+                if old_page_id != extracted_page_id:
+                    logger.info(f"Extracted NEW page ID: {self.current_page_id} (was {old_page_id})")
+                else:
+                    logger.info(f"Extracted page ID matches config: {self.current_page_id}")
+            else:
+                # Fall back to config value if extraction fails
+                logger.warning(f"Could not extract page ID from page HTML/URL, using config value: {self.current_page_id}")
+                logger.warning(f"Initial page URL: {response.url}")
+                # Save initial page for debugging
+                try:
+                    self.save_timeslots_html("initial_page_debug", response.text)
+                except:
+                    pass
+            
+            # Save initial page HTML for navigation
+            self.last_page_html = response.text
+            self._save_navigation_step('step1_initial_page', response.text, response.url)
+            
+            # Store initial page URL (set from actual page)
+            self.initial_page_url = response.url
+            
+            # Extract and set values from the page ONCE at startup
+            # These variables are now set from the actual page, not hardcoded
+            
+            # 1. Extract page ID (already done above, but ensure it's set)
+            if not self.current_page_id or self.current_page_id == PAGE_ID:
+                # Try to extract again if we're still using default
+                extracted_page_id = self._extract_page_id(response.text, response.url)
+                if extracted_page_id:
+                    self.current_page_id = extracted_page_id
+            
+            # 2. Extract button IDs for all activities
+            extracted_buttons = self._extract_activity_buttons(response.text)
+            if extracted_buttons:
+                # Update our cached button IDs (set from page)
+                self.activity_button_ids.update(extracted_buttons)
+                logger.info(f"Extracted {len(extracted_buttons)} activity buttons from page: {list(extracted_buttons.keys())}")
+                # Compare with config and warn if different
+                for activity_type, extracted_id in extracted_buttons.items():
+                    config_id = ACTIVITY_BUTTON_IDS.get(activity_type)
+                    if config_id and extracted_id != config_id:
+                        logger.warning(f"Button ID mismatch for {activity_type}: config has {config_id}, page has {extracted_id} (using page value)")
+            else:
+                logger.warning("Could not extract activity buttons from initial page, using config values")
+                # Fall back to config values
+                self.activity_button_ids = ACTIVITY_BUTTON_IDS.copy()
+            
+            # 3. Extract base URLs from page if they differ (for future use)
+            # The URLs are typically consistent, but we store the actual page URL
+            if response.url and response.url != BOOKING_BASE_URL:
+                # If redirected, update base URL
+                base_match = re.search(r'(https?://[^/]+)', response.url)
+                if base_match:
+                    base = base_match.group(1)
+                    if 'frontdesksuite' in base:
+                        self.booking_base_url = base + '/rcfs/cardelrec'
+                    elif 'frontdeskqms' in base:
+                        self.booking_cf_url = base + '/rcfs/cardelrec'
+            
+            # Log session initialization details
+            logger.info(f"Session initialized - Session ID: {self.current_session_id[:20] if self.current_session_id else 'None'}..., Page ID: {self.current_page_id}")
+            logger.info(f"Initial page URL: {self.initial_page_url}")
+            logger.info(f"Button IDs set from page: {list(self.activity_button_ids.keys())}")
             
             self._human_delay()
             return True
         except requests.exceptions.HTTPError as e:
-            logger.error(f"HTTP error initializing session: {e.response.status_code}")
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"HTTP error initializing session: {e.response.status_code}\n{error_details}")
             return False
         except Exception as e:
-            logger.error(f"Failed to initialize session: {str(e)}")
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"Failed to initialize session: {str(e)}\n{error_details}")
             return False
     
+    def _extract_activity_buttons(self, html: str) -> Dict[str, str]:
+        """Extract button IDs for all activities from the page dynamically
+        
+        Matches activities by text content and extracts their button IDs.
+        Returns a dictionary mapping activity_type to button_id.
+        """
+        soup = BeautifulSoup(html, 'html.parser')
+        activity_buttons = {}
+        
+        # Activity name mappings for matching
+        activity_patterns = {
+            'badminton-16+': [r'badminton.*16\+', r'badminton.*adult', r'badminton.*16\s*\+'],
+            'badminton-family': [r'badminton.*family'],
+            'pickleball': [r'pickleball']
+        }
+        
+        # Find all potential activity buttons/links
+        # Look for buttons, links, or clickable divs
+        candidates = soup.find_all(['button', 'a', 'div'], 
+                                  class_=re.compile(r'btn|button|link|activity|sport|card', re.I))
+        candidates.extend(soup.find_all(['button', 'a'], attrs={'data-buttonid': True}))
+        
+        for candidate in candidates:
+            text = candidate.get_text(strip=True).lower()
+            
+            # Check each activity pattern
+            for activity_type, patterns in activity_patterns.items():
+                for pattern in patterns:
+                    if re.search(pattern, text, re.I):
+                        # Found a match, extract button ID
+                        button_id = None
+                        
+                        # Try various attributes
+                        button_id = (candidate.get('data-buttonid') or
+                                    candidate.get('data-button-id') or
+                                    candidate.get('data-id'))
+                        
+                        # Try onclick handler
+                        if not button_id:
+                            onclick = candidate.get('onclick')
+                            if onclick:
+                                match = re.search(r'buttonId["\']?\s*[:=]\s*["\']([a-f0-9-]+)["\']', onclick)
+                                if match:
+                                    button_id = match.group(1)
+                        
+                        # Try href parameter
+                        if not button_id and candidate.name == 'a':
+                            href = candidate.get('href', '')
+                            match = re.search(r'buttonId=([a-f0-9-]+)', href)
+                            if match:
+                                button_id = match.group(1)
+                        
+                        # Validate button ID format
+                        if button_id and re.match(r'^[a-f0-9-]{36}$', button_id):
+                            if activity_type not in activity_buttons:
+                                activity_buttons[activity_type] = button_id
+                                logger.info(f"Extracted button ID for {activity_type}: {button_id} from text: '{candidate.get_text(strip=True)[:50]}'")
+                            break
+        
+        return activity_buttons
+    
+    def _extract_button_id_from_page(self, html: str, activity_name: str) -> Optional[str]:
+        """Extract button ID from the booking page HTML for a given activity name"""
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Look for buttons/links with the activity name in their text or data attributes
+        # Common patterns: data-buttonid, data-button-id, onclick with buttonId, etc.
+        
+        # Try to find by activity name in text content
+        activity_keywords = {
+            'badminton-16+': ['badminton', '16+', 'adult'],
+            'badminton-family': ['badminton', 'family'],
+            'pickleball': ['pickleball']
+        }
+        
+        keywords = activity_keywords.get(activity_name, [activity_name.replace('-', ' ')])
+        
+        # Look for buttons/links with data attributes
+        for keyword in keywords:
+            # Find elements containing the keyword
+            elements = soup.find_all(string=re.compile(keyword, re.I))
+            for element in elements:
+                parent = element.find_parent(['a', 'button', 'div'])
+                if parent:
+                    # Check for buttonId in various attributes
+                    button_id = (parent.get('data-buttonid') or 
+                               parent.get('data-button-id') or
+                               parent.get('data-id') or
+                               parent.get('onclick'))
+                    
+                    if button_id:
+                        # Extract UUID from onclick if present
+                        if 'onclick' in str(button_id):
+                            match = re.search(r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})', str(button_id))
+                            if match:
+                                return match.group(1)
+                        elif re.match(r'^[a-f0-9-]+$', str(button_id)):
+                            return button_id
+        
+        # Look for all buttons/links with buttonId attributes
+        all_buttons = soup.find_all(attrs={'data-buttonid': True})
+        for btn in all_buttons:
+            text = btn.get_text().lower()
+            if any(kw.lower() in text for kw in keywords):
+                button_id = btn.get('data-buttonid')
+                if button_id and re.match(r'^[a-f0-9-]+$', button_id):
+                    return button_id
+        
+        return None
+    
     def select_activity(self, activity_type: str = 'badminton-16+') -> bool:
-        """Navigate to activity selection page and return the page we land on"""
+        """Navigate to activity selection page using cached button ID from startup"""
         try:
-            if activity_type not in ACTIVITY_BUTTON_IDS:
-                logger.error(f"Unknown activity type: {activity_type}")
+            # Get button ID from cache (extracted at startup) or fall back to config
+            button_id = self.activity_button_ids.get(activity_type) or ACTIVITY_BUTTON_IDS.get(activity_type)
+            
+            if not button_id:
+                logger.error(f"No button ID found for activity: {activity_type}")
                 return False
             
-            button_id = ACTIVITY_BUTTON_IDS[activity_type]
+            # Verify we have required IDs
+            if not self.current_page_id:
+                logger.error(f"No page ID available for activity selection")
+                return False
             
-            # Navigate to start reservation
+            # Navigate to StartReservation (this establishes flow state and redirects)
             url = f"{BOOKING_CF_URL}/ReserveTime/StartReservation"
             params = {
                 'pageId': self.current_page_id,
@@ -110,14 +456,21 @@ class OttawaRecBookingScraper:
                 'uiCulture': DEFAULT_UI_CULTURE
             }
             
+            logger.info(f"Navigating to select activity {activity_type} with buttonId={button_id}")
+            
             response = self.session.get(url, params=params, timeout=REQUEST_TIMEOUT, allow_redirects=True)
             
             # Check for authentication errors
             if response.status_code in [401, 403]:
                 logger.error(f"Authentication error: HTTP {response.status_code}")
+                self._save_navigation_step(f'step2_{activity_type}_auth_error', response.text, response.url)
                 return False
             
             response.raise_for_status()
+            
+            # Save this navigation step
+            self._save_navigation_step(f'step2_{activity_type}_after_select', response.text, response.url)
+            self.last_page_html = response.text
             
             # Update session ID if changed
             new_session_id = self._extract_session_id(response.text)
@@ -127,31 +480,56 @@ class OttawaRecBookingScraper:
             # Store the final URL we landed on
             self.last_activity_url = response.url
             
+            logger.info(f"Successfully navigated - URL: {response.url}")
+            
             self._human_delay()
             return True
         except requests.exceptions.HTTPError as e:
-            logger.error(f"HTTP error selecting activity: {e.response.status_code}")
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"HTTP error selecting activity {activity_type}: {e.response.status_code}\n{error_details}")
+            
+            # Save error page HTML for debugging
+            if e.response:
+                try:
+                    self._save_navigation_step(f'step2_{activity_type}_error_{e.response.status_code}', e.response.text, e.response.url)
+                    screenshot_path = self.save_timeslots_html(step_name=f"{activity_type}_select_error_{e.response.status_code}", html_content=e.response.text)
+                    if screenshot_path:
+                        if not hasattr(self, 'screenshots'):
+                            self.screenshots = {}
+                        self.screenshots[activity_type] = screenshot_path
+                except Exception as save_error:
+                    logger.error(f"Failed to save error screenshot: {str(save_error)}")
+            
             return False
         except Exception as e:
-            logger.error(f"Failed to select activity: {str(e)}")
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"Failed to select activity {activity_type}: {str(e)}\n{error_details}")
             return False
     
     def set_group_size(self, activity_type: str, group_size: int = DEFAULT_GROUP_SIZE) -> bool:
-        """Set group size for reservation - follows actual navigation flow"""
+        """Set group size for reservation - uses cached button ID from startup"""
         try:
-            button_id = ACTIVITY_BUTTON_IDS.get(activity_type)
+            # Use cached button ID or fall back to config
+            button_id = self.activity_button_ids.get(activity_type) or ACTIVITY_BUTTON_IDS.get(activity_type)
             if not button_id:
                 logger.error(f"Unknown activity type: {activity_type}")
                 return False
             
-            # Check if we're already on SlotCountSelection page (from redirect after StartReservation)
+            # Simplified: Check if we're already on SlotCountSelection page
             if self.last_activity_url and 'SlotCountSelection' in self.last_activity_url:
-                # We're already on the group size page, extract CSRF and submit
-                # Get the current page content
+                # We're already on the group size page, get current content
                 response = self.session.get(self.last_activity_url, timeout=REQUEST_TIMEOUT)
                 response.raise_for_status()
+                self._save_navigation_step(f'step2b_{activity_type}_slot_count_page', response.text, response.url)
+                self.last_page_html = response.text
+            elif self.last_activity_url and 'TimeSelection' in self.last_activity_url:
+                # Already on TimeSelection, group size may be set during booking
+                logger.info("Already on TimeSelection page, group size may be set during booking")
+                return True
             else:
-                # Try to navigate to slot count selection page
+                # Try to navigate to SlotCountSelection (simplified - just construct URL)
                 url = f"{BOOKING_CF_URL}/ReserveTime/SlotCountSelection"
                 params = {
                     'pageId': self.current_page_id,
@@ -161,21 +539,22 @@ class OttawaRecBookingScraper:
                 
                 response = self.session.get(url, params=params, timeout=REQUEST_TIMEOUT, allow_redirects=True)
                 
-                # If 404, check if we can go directly to time selection
+                # If 404, this step may not be needed for this activity
                 if response.status_code == 404:
-                    # Maybe group size is set via form on time selection page
-                    # Try to proceed to time selection - group size might be in the form
+                    logger.info(f"SlotCountSelection returned 404, skipping group size step for {activity_type}")
                     return True
                 
                 response.raise_for_status()
+                self._save_navigation_step(f'step2b_{activity_type}_slot_count_page', response.text, response.url)
+                self.last_page_html = response.text
             
-            # Extract CSRF token from current page
-            csrf_token = self._get_csrf_token(response.text)
+            # Extract CSRF token from current page (simplified)
+            csrf_token = self._get_csrf_token(self.last_page_html)
             if not csrf_token:
-                # If no CSRF token, maybe we're already past this step
+                logger.info("No CSRF token found, may already be past group size step")
                 return True
             
-            # Submit group size
+            # Build form data (simplified - standard fields)
             form_data = {
                 'sessionid': self.current_session_id,
                 'pageid': self.current_page_id,
@@ -186,9 +565,10 @@ class OttawaRecBookingScraper:
                 '__RequestVerificationToken': csrf_token
             }
             
-            # Determine the correct URL to POST to
+            # POST to SlotCountSelection endpoint (simplified)
             post_url = self.last_activity_url if (self.last_activity_url and 'SlotCountSelection' in self.last_activity_url) else f"{BOOKING_CF_URL}/ReserveTime/SlotCountSelection"
             
+            logger.info(f"Submitting group size form to: {post_url}")
             response = self.session.post(
                 post_url,
                 data=form_data,
@@ -196,19 +576,26 @@ class OttawaRecBookingScraper:
                 allow_redirects=True
             )
             
-            # Update last URL after redirect
-            if response.url:
-                self.last_activity_url = response.url
-            
             # If 404 on POST, the endpoint doesn't exist for this activity
             if response.status_code == 404:
-                return True  # Continue - group size might be set differently
+                logger.info("Group size POST returned 404, endpoint may not exist for this activity")
+                return True  # Endpoint doesn't exist for this activity, continue anyway
             
             response.raise_for_status()
             
-            # Update last URL after redirect
-            if response.url:
-                self.last_activity_url = response.url
+            # Save this navigation step
+            self._save_navigation_step(f'step2c_{activity_type}_after_group_size', response.text, response.url)
+            self.last_page_html = response.text
+            
+            # Update session ID if changed
+            new_session_id = self._extract_session_id(response.text)
+            if new_session_id:
+                self.current_session_id = new_session_id
+            
+            # Store the final URL we landed on
+            self.last_activity_url = response.url
+            
+            logger.info(f"Successfully set group size - URL: {response.url}")
             
             self._human_delay()
             return True
@@ -238,7 +625,8 @@ class OttawaRecBookingScraper:
             Dict with 'success', 'slots', 'message', 'error_type', and optional error details
         """
         try:
-            button_id = ACTIVITY_BUTTON_IDS.get(activity_type)
+            # Use cached button ID from startup or fall back to config
+            button_id = self.activity_button_ids.get(activity_type) or ACTIVITY_BUTTON_IDS.get(activity_type)
             if not button_id:
                 return {
                     'success': False,
@@ -261,11 +649,17 @@ class OttawaRecBookingScraper:
                 
                 # Select activity
                 if not self.select_activity(activity_type):
+                    # Get screenshot if available (saved by select_activity on error)
+                    screenshot_path = None
+                    if hasattr(self, 'screenshots') and activity_type in self.screenshots:
+                        screenshot_path = self.screenshots[activity_type]
+                    
                     return {
                         'success': False,
                         'slots': [],
-                        'message': 'Failed to select activity',
-                        'error_type': 'navigation_error'
+                        'message': 'Failed to select activity (check logs for details)',
+                        'error_type': 'navigation_error',
+                        'screenshot': screenshot_path
                     }
                 
                 # Set group size if needed
@@ -281,18 +675,25 @@ class OttawaRecBookingScraper:
                     # Try to set group size anyway (will handle 404 if not needed)
                     self.set_group_size(activity_type, group_size)
             
-            # Get TimeSelection page
-            url = f"{BOOKING_CF_URL}/ReserveTime/TimeSelection"
-            params = {
-                'culture': DEFAULT_CULTURE,
-                'pageId': self.current_page_id,
-                'buttonId': button_id
-            }
-            
-            response = self.session.get(url, params=params, timeout=REQUEST_TIMEOUT, allow_redirects=True)
+            # Get TimeSelection page - simplified approach
+            if self.last_activity_url and 'TimeSelection' in self.last_activity_url:
+                # We're already on the time selection page, get it
+                logger.info(f"Already on TimeSelection page: {self.last_activity_url}")
+                response = self.session.get(self.last_activity_url, timeout=REQUEST_TIMEOUT, allow_redirects=True)
+            else:
+                # Construct TimeSelection URL (simplified - use cached button ID)
+                url = f"{BOOKING_CF_URL}/ReserveTime/TimeSelection"
+                params = {
+                    'culture': DEFAULT_CULTURE,
+                    'pageId': self.current_page_id,
+                    'buttonId': button_id
+                }
+                logger.info(f"Navigating to TimeSelection with buttonId={button_id}")
+                response = self.session.get(url, params=params, timeout=REQUEST_TIMEOUT, allow_redirects=True)
             
             # Check for HTTP errors
             if response.status_code in [401, 403]:
+                self._save_navigation_step(f'step3_{activity_type}_auth_error', response.text, response.url)
                 return {
                     'success': False,
                     'slots': [],
@@ -303,8 +704,13 @@ class OttawaRecBookingScraper:
             
             response.raise_for_status()
             
-            # Validate that we're on the TimeSelection page
-            if 'TimeSelection' not in response.url and 'TimeSelection' not in response.text[:500]:
+            # Save this navigation step
+            self._save_navigation_step(f'step3_{activity_type}_time_selection', response.text, response.url)
+            self.last_page_html = response.text
+            
+            # Validate that we're on the TimeSelection page (simplified check)
+            if 'TimeSelection' not in response.url and 'TimeSelection' not in response.text[:1000]:
+                self._save_navigation_step(f'step3_{activity_type}_unexpected_page', response.text, response.url)
                 return {
                     'success': False,
                     'slots': [],
@@ -317,8 +723,9 @@ class OttawaRecBookingScraper:
             slots = self._parse_time_slots(response.text)
             self.last_check_time = datetime.now()
             
-            # Always save HTML screenshot (even if no slots found)
-            screenshot_path = self.save_timeslots_html(activity_type, response.text)
+            # Always save HTML screenshot (even if no slots found or on errors)
+            # This helps debug what page was actually returned
+            screenshot_path = self.save_timeslots_html(step_name=f'step4_{activity_type}_final_slots', html_content=response.text)
             if screenshot_path:
                 # Store screenshot path for this activity
                 if not hasattr(self, 'screenshots'):
@@ -332,18 +739,38 @@ class OttawaRecBookingScraper:
                 'screenshot': screenshot_path
             }
         except requests.exceptions.HTTPError as e:
+            import traceback
             status_code = e.response.status_code if e.response else None
-            logger.error(f"HTTP error getting available slots: {status_code} - {str(e)}")
+            error_details = traceback.format_exc()
+            logger.error(f"HTTP error getting available slots for {activity_type}: {status_code} - {str(e)}\n{error_details}")
+            
+            # Save error page HTML for debugging (even on 404 or other errors)
+            screenshot_path = None
+            if e.response:
+                try:
+                    # Save the error response HTML
+                    self._save_navigation_step(f'step3_{activity_type}_error_{status_code}', e.response.text, e.response.url)
+                    screenshot_path = self.save_timeslots_html(step_name=f"{activity_type}_error_{status_code}", html_content=e.response.text)
+                    if screenshot_path:
+                        if not hasattr(self, 'screenshots'):
+                            self.screenshots = {}
+                        self.screenshots[activity_type] = screenshot_path
+                except Exception as save_error:
+                    logger.error(f"Failed to save error screenshot: {str(save_error)}")
+            
             return {
                 'success': False,
                 'slots': [],
                 'message': f'HTTP error: {status_code}',
                 'error_type': 'http_error',
                 'status_code': status_code,
-                'error_details': str(e)
+                'error_details': str(e),
+                'screenshot': screenshot_path
             }
         except requests.exceptions.RequestException as e:
-            logger.error(f"Network error getting available slots: {str(e)}")
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"Network error getting available slots for {activity_type}: {str(e)}\n{error_details}")
             return {
                 'success': False,
                 'slots': [],
@@ -352,7 +779,9 @@ class OttawaRecBookingScraper:
                 'error_details': str(e)
             }
         except Exception as e:
-            logger.error(f"Failed to get available slots: {str(e)}")
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"Failed to get available slots for {activity_type}: {str(e)}\n{error_details}")
             return {
                 'success': False,
                 'slots': [],
@@ -361,8 +790,17 @@ class OttawaRecBookingScraper:
                 'error_details': str(e)
             }
     
-    def save_timeslots_html(self, activity_type: str, html_content: str) -> Optional[str]:
-        """Save HTML content of timeslots page to file"""
+    def _save_navigation_step(self, step_name: str, html: str, url: str = None) -> Optional[str]:
+        """Save HTML at each navigation step for debugging
+        
+        Args:
+            step_name: Descriptive name for this step (e.g., 'step1_initial_page')
+            html: HTML content to save
+            url: Optional URL to include in the saved file
+        
+        Returns:
+            Filepath if successful, None otherwise
+        """
         try:
             import os
             from datetime import datetime
@@ -373,7 +811,52 @@ class OttawaRecBookingScraper:
             
             # Generate filename with timestamp
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"timeslots_{activity_type}_{timestamp}.html"
+            filename = f"{step_name}_{timestamp}.html"
+            filepath = os.path.join(screenshots_dir, filename)
+            
+            # Add URL as comment at top of HTML if provided
+            html_to_save = html
+            if url:
+                html_to_save = f"<!-- Navigation Step: {step_name}\nURL: {url}\nTimestamp: {timestamp}\n-->\n{html}"
+            
+            # Save HTML content
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(html_to_save)
+            
+            logger.info(f"Saved navigation step: {step_name} to {filepath}")
+            return filepath
+        except Exception as e:
+            logger.error(f"Failed to save navigation step {step_name}: {str(e)}")
+            return None
+    
+    def save_timeslots_html(self, activity_type: str = None, html_content: str = None, step_name: str = None) -> Optional[str]:
+        """Save HTML content to file
+        
+        Args:
+            activity_type: Activity type (optional, for backward compatibility)
+            html_content: HTML content to save
+            step_name: Step name (optional, if provided uses this instead of activity_type)
+        
+        Returns:
+            Filepath if successful, None otherwise
+        """
+        try:
+            import os
+            from datetime import datetime
+            
+            # Create screenshots directory if it doesn't exist
+            screenshots_dir = 'screenshots'
+            os.makedirs(screenshots_dir, exist_ok=True)
+            
+            # Generate filename
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            if step_name:
+                filename = f"{step_name}_{timestamp}.html"
+            elif activity_type:
+                filename = f"timeslots_{activity_type}_{timestamp}.html"
+            else:
+                filename = f"page_{timestamp}.html"
+            
             filepath = os.path.join(screenshots_dir, filename)
             
             # Save HTML content
@@ -382,7 +865,7 @@ class OttawaRecBookingScraper:
             
             return filepath
         except Exception as e:
-            logger.error(f"Failed to save timeslots HTML: {str(e)}")
+            logger.error(f"Failed to save HTML: {str(e)}")
             return None
     
     def clear_screenshots(self):
@@ -515,7 +998,8 @@ class OttawaRecBookingScraper:
     ) -> Dict:
         """Book a specific time slot and navigate to ContactInfo page"""
         try:
-            button_id = ACTIVITY_BUTTON_IDS.get(activity_type)
+            # Use cached button ID from startup or fall back to config
+            button_id = self.activity_button_ids.get(activity_type) or ACTIVITY_BUTTON_IDS.get(activity_type)
             if not button_id:
                 return {'success': False, 'message': f'Unknown activity type: {activity_type}'}
             
@@ -687,7 +1171,8 @@ class OttawaRecBookingScraper:
                         'error_type': 'validation_error'
                     }
             
-            button_id = ACTIVITY_BUTTON_IDS.get(activity_type)
+            # Use cached button ID from startup or fall back to config
+            button_id = self.activity_button_ids.get(activity_type) or ACTIVITY_BUTTON_IDS.get(activity_type)
             if not button_id:
                 return {
                     'success': False,
@@ -844,7 +1329,8 @@ class OttawaRecBookingScraper:
     ) -> Dict:
         """Submit contact information form"""
         try:
-            button_id = ACTIVITY_BUTTON_IDS.get(activity_type)
+            # Use cached button ID from startup or fall back to config
+            button_id = self.activity_button_ids.get(activity_type) or ACTIVITY_BUTTON_IDS.get(activity_type)
             if not button_id:
                 return {
                     'success': False,

@@ -96,6 +96,18 @@
                 flex-wrap: wrap;
                 gap: 6px;
             }
+            
+            #alerts {
+                bottom: 10px;
+                right: 10px;
+                left: 10px;
+                max-width: none;
+            }
+            
+            .alert {
+                padding: 12px 35px 12px 15px;
+                font-size: 0.9em;
+            }
         }
         
         .header {
@@ -252,11 +264,15 @@
             display: flex;
             flex-direction: column;
             gap: 4px;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
         }
         
         .status-cell > span:first-child {
             display: flex;
             align-items: center;
+            justify-content: center;
             gap: 8px;
         }
         
@@ -270,6 +286,9 @@
             
             .status-cell {
                 gap: 2px;
+                align-items: center;
+                justify-content: center;
+                text-align: center;
             }
             
             #contactModal {
@@ -394,15 +413,56 @@
         }
         
         
-        .alert {
+        #alerts {
             position: fixed;
-            top: 20px;
+            bottom: 20px;
             right: 20px;
-            padding: 15px 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 400px;
+        }
+        
+        .alert {
+            position: relative;
+            padding: 15px 40px 15px 20px;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            z-index: 1000;
             animation: slideIn 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .alert-close {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: transparent;
+            border: none;
+            color: inherit;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 4px 8px;
+            line-height: 1;
+            opacity: 0.7;
+            transition: opacity 0.2s ease;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .alert-close:hover {
+            opacity: 1;
+        }
+        
+        .alert-close:focus {
+            outline: 2px solid currentColor;
+            outline-offset: 2px;
+            border-radius: 4px;
         }
         
         @keyframes slideIn {
@@ -413,6 +473,17 @@
             to {
                 transform: translateX(0);
                 opacity: 1;
+            }
+        }
+        
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(100%);
+                opacity: 0;
             }
         }
         
@@ -479,11 +550,37 @@
             const alerts = document.getElementById('alerts');
             const alert = document.createElement('div');
             alert.className = `alert alert-${type}`;
-            alert.textContent = message;
+            
+            // Create message text
+            const messageText = document.createElement('span');
+            messageText.textContent = message;
+            alert.appendChild(messageText);
+            
+            // Create close button
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'alert-close';
+            closeBtn.innerHTML = '×';
+            closeBtn.setAttribute('aria-label', 'Close');
+            closeBtn.onclick = () => {
+                alert.style.animation = 'slideOut 0.3s ease';
+                setTimeout(() => {
+                    alert.remove();
+                }, 300);
+            };
+            alert.appendChild(closeBtn);
+            
             alerts.appendChild(alert);
             
+            // Auto-remove after 5 seconds
             setTimeout(() => {
-                alert.remove();
+                if (alert.parentNode) {
+                    alert.style.animation = 'slideOut 0.3s ease';
+                    setTimeout(() => {
+                        if (alert.parentNode) {
+                            alert.remove();
+                        }
+                    }, 300);
+                }
             }, 5000);
         }
         
@@ -500,24 +597,22 @@
                         if (state.active && !currentState.active) {
                             // Just started monitoring - set last check time to now
                             lastCheckTimes[sport.id] = Date.now();
-                            startCountdown(sport.id);
+                            // Start countdown immediately
+                            if (!countdownTimers[sport.id]) {
+                                startCountdown(sport.id);
+                            }
                         } else if (!state.active && currentState.active) {
                             // Just stopped monitoring - clear countdown
                             stopCountdown(sport.id);
                             delete lastCheckTimes[sport.id];
                         } else if (state.active) {
                             // Monitoring is active - ensure countdown is running
-                            // If we have slots data, it means a check just completed, reset timer
-                            if (state.slots !== undefined) {
-                                // Check completed - reset countdown if we don't have a last check time
-                                // or if it's been more than CHECK_INTERVAL seconds
-                                if (!lastCheckTimes[sport.id]) {
-                                    lastCheckTimes[sport.id] = Date.now();
-                                }
-                                // Ensure countdown is running
-                                if (!countdownTimers[sport.id]) {
-                                    startCountdown(sport.id);
-                                }
+                            if (!lastCheckTimes[sport.id]) {
+                                lastCheckTimes[sport.id] = Date.now();
+                            }
+                            // Ensure countdown is running
+                            if (!countdownTimers[sport.id]) {
+                                startCountdown(sport.id);
                             }
                         }
                         
@@ -884,7 +979,7 @@
                 if (stopBtn) stopBtn.disabled = false;
                 if (checkBtn) checkBtn.disabled = true;
             } else {
-                statusCell.innerHTML = '<span class="status-indicator inactive"></span><span class="status-text">Ready</span>';
+                statusCell.innerHTML = '<span class="status-indicator inactive"></span>';
                 // Stop countdown if monitoring is not active
                 stopCountdown(sportId);
                 if (startBtn) startBtn.disabled = false;
@@ -912,6 +1007,7 @@
                 const pageLink = `https://reservation.frontdesksuite.ca/rcfs/cardelrec`;
                 
                 if (availableSlots.length > 0) {
+                    // Show ALL slots (not limited)
                     const slotsHtml = availableSlots.map((slot, index) => {
                         const slotTime = slot.full_datetime || `${slot.date} ${slot.time}`;
                         // Find original index in state.slots for selectSlot function
@@ -919,17 +1015,19 @@
                         return `
                             <div style="margin-bottom: 8px; padding: 12px; background: rgba(0, 255, 255, 0.1); border: 1px solid rgba(0, 255, 255, 0.3); border-radius: 4px; box-shadow: 0 0 5px rgba(0, 255, 255, 0.2);">
                                 <div style="margin-bottom: 6px; font-weight: 600; color: #00ffff; font-family: 'Orbitron', monospace;">${slotTime}</div>
-                                <button onclick="selectSlot('${sportId}', ${originalIndex})" class="btn-book-slot" style="padding: 6px 16px; font-size: 0.85em; cursor: pointer; border-radius: 4px; background: rgba(0, 255, 136, 0.3); color: #00ff88; border: 2px solid #00ff88; font-weight: 600;">Book</button>
+                                <button onclick="selectSlot('${sportId}', ${originalIndex})" class="btn-book-slot" style="padding: 6px 16px; font-size: 0.85em; cursor: pointer; border-radius: 4px; background: rgba(0, 255, 136, 0.3); color: #00ff88; border: 2px solid #00ff88; font-weight: 600; transition: all 0.3s ease;" onmouseover="this.style.background='rgba(0,255,136,0.5)'" onmouseout="this.style.background='rgba(0,255,136,0.3)'">Book</button>
                             </div>
                         `;
                     }).join('');
                     
                     detailsCell.innerHTML = `
                         <div>
-                            <div style="margin-bottom: 8px; font-weight: 700; color: #00ff88; font-family: 'Orbitron', monospace; text-shadow: 0 0 5px rgba(0, 255, 136, 0.5);">${availableSlots.length} slot(s) available</div>
-                            ${slotsHtml}
+                            <div style="margin-bottom: 12px; font-weight: 700; color: #00ff88; font-family: 'Orbitron', monospace; text-shadow: 0 0 5px rgba(0, 255, 136, 0.5); font-size: 1.1em;">${availableSlots.length} slot(s) available</div>
+                            <div style="max-height: 400px; overflow-y: auto; margin-bottom: 12px; padding-right: 5px; scrollbar-width: thin; scrollbar-color: rgba(0, 255, 255, 0.5) transparent;">
+                                ${slotsHtml}
+                            </div>
                             ${screenshotLink}
-                            <a href="${pageLink}" target="_blank" class="detail-link" style="display: block; margin-top: 8px; color: #00ffff; text-decoration: none; font-weight: 600;">🔗 Booking Page</a>
+                            <a href="${pageLink}" target="_blank" class="detail-link" style="display: block; margin-top: 8px; color: #00ffff; text-decoration: none; font-weight: 600; padding: 10px; background: rgba(0, 255, 255, 0.15); border: 1px solid rgba(0, 255, 255, 0.4); border-radius: 6px; text-align: center; transition: all 0.3s ease;" onmouseover="this.style.background='rgba(0,255,255,0.25)'; this.style.boxShadow='0 0 10px rgba(0,255,255,0.5)'" onmouseout="this.style.background='rgba(0,255,255,0.15)'; this.style.boxShadow='none'">🔗 View All ${availableSlots.length} Slots on Booking Page</a>
                         </div>
                     `;
                 } else {
@@ -976,7 +1074,6 @@
                     </td>
                     <td class="status-cell">
                         <span class="status-indicator inactive"></span>
-                        <span class="status-text">Ready</span>
                     </td>
                     <td class="details-cell">
                         <span style="color: #999;">No details yet</span>
@@ -1007,6 +1104,10 @@
                     showAlert(`Monitoring started for ${sports.find(s => s.id === sportId).name}`, 'success');
                     // Set last check time to now to start countdown
                     lastCheckTimes[sportId] = Date.now();
+                    // Start countdown immediately
+                    if (!countdownTimers[sportId]) {
+                        startCountdown(sportId);
+                    }
                     updateStatus();
                 } else {
                     showAlert(data.message || 'Failed to start', 'error');
@@ -1084,7 +1185,7 @@
                 }
                 // Update slots (empty array if none found)
                 monitoringState[sportId].slots = data.slots || [];
-                // Update screenshot if available
+                // Update screenshot if available (even on errors)
                 if (data.screenshot) {
                     monitoringState[sportId].screenshot = data.screenshot;
                 }

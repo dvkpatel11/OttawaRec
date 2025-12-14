@@ -140,11 +140,13 @@ Edit `config.py` to customize:
 ## How It Works
 
 1. **Session Initialization**: Creates a session with the booking system
-2. **Activity Selection**: Navigates to the badminton booking page
+2. **Activity Selection**: Navigates to the activity booking page (badminton is under "Gymnasium sports" category)
 3. **Group Size**: Sets the number of people (default: 1)
 4. **Slot Detection**: Parses available time slots from the booking page
 5. **Booking**: Automatically submits booking form when slot is found
 6. **Notifications**: Sends Telegram alerts at each step
+
+**Note:** As of 2024, racquet sports (Badminton, Pickleball) and other gymnasium activities are now organized under the "Gymnasium sports" category in the Ottawa recreation booking system.
 
 ## Important Notes
 

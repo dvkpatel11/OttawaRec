@@ -104,24 +104,48 @@ class TelegramNotifier:
                 f"🔗 <a href='{booking_url}'>Book Now</a>"
             )
         else:
-            # Show all slots
+            # Show ALL slots (Telegram message limit is 4096 characters)
             slots_list = []
-            for slot in slots[:10]:  # Limit to first 10 slots
+            for slot in slots:
                 full_datetime = slot.get('full_datetime')
                 if not full_datetime:
                     date = slot.get('date', 'N/A')
                     time = slot.get('time', 'N/A')
                     full_datetime = f"{date} {time}"
                 slots_list.append(f"• {full_datetime}")
-            slots_text = "\n".join(slots_list)
-            if len(slots) > 10:
-                slots_text += f"\n... and {len(slots) - 10} more slots"
             
-            message = (
+            slots_text = "\n".join(slots_list)
+            
+            # Check message length (Telegram limit is 4096 chars)
+            base_message = (
                 f"🏸 <b>{activity_name} - {len(slots)} Slots Found!</b>\n\n"
                 f"{slots_text}\n\n"
                 f"🔗 <a href='{booking_url}'>View All & Book</a>"
             )
+            
+            # If message is too long, truncate slots but keep link
+            if len(base_message) > 4000:
+                # Keep first slots that fit
+                truncated_slots = []
+                header = f"🏸 <b>{activity_name} - {len(slots)} Slots Found!</b>\n\n"
+                footer = f"\n\n🔗 <a href='{booking_url}'>View All & Book</a>"
+                available_chars = 4000 - len(header) - len(footer) - 50  # 50 char buffer
+                
+                for slot in slots:
+                    full_datetime = slot.get('full_datetime')
+                    if not full_datetime:
+                        date = slot.get('date', 'N/A')
+                        time = slot.get('time', 'N/A')
+                        full_datetime = f"{date} {time}"
+                    slot_line = f"• {full_datetime}\n"
+                    if len("\n".join(truncated_slots) + slot_line) > available_chars:
+                        truncated_slots.append(f"... and {len(slots) - len(truncated_slots)} more slots")
+                        break
+                    truncated_slots.append(f"• {full_datetime}")
+                
+                message = header + "\n".join(truncated_slots) + footer
+            else:
+                message = base_message
         
         return self.send_message(message)
     

@@ -29,10 +29,10 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Credentials', 'true')
     return response
 
-# Configure logging - only errors
+# Configure logging - show errors and warnings with more detail
 logging.basicConfig(
-    level=logging.ERROR,
-    format='%(asctime)s - %(name)s - ERROR - %(message)s'
+    level=logging.WARNING,  # Show WARNING and ERROR
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
@@ -126,6 +126,12 @@ def monitor_loop(activity_type: str = 'badminton-16+', group_size: int = 2):
                     # If it's a session/auth error, try to re-initialize next time
                     if result.get('error_type') in ['session_error', 'authentication_error']:
                         scraper.current_session_id = None
+                    
+                    # Update screenshot even on error (for debugging)
+                    if result.get('screenshot'):
+                        monitoring_processes[activity_type]['screenshot'] = result['screenshot']
+                    elif hasattr(scraper, 'screenshots') and activity_type in scraper.screenshots:
+                        monitoring_processes[activity_type]['screenshot'] = scraper.screenshots[activity_type]
             
             # Check previous slots BEFORE updating (to detect new slots)
             previous_slots = monitoring_processes.get(activity_type, {}).get('slots', [])
@@ -160,9 +166,11 @@ def monitor_loop(activity_type: str = 'badminton-16+', group_size: int = 2):
                     time.sleep(1)
                     
         except Exception as e:
-            logger.error(f"Monitoring error: {str(e)}")
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"Monitoring error for {activity_type}: {str(e)}\n{error_details}")
             # Critical: notify on errors
-            telegram.notify_error(f"Monitoring error: {str(e)}")
+            telegram.notify_error(f"Monitoring error for {activity_type}: {str(e)}")
             # Wait a bit before retrying
             time.sleep(60)
     
@@ -230,7 +238,9 @@ def start_monitoring():
             'message': 'Monitoring started successfully'
         })
     except Exception as e:
-        logger.error(f"Failed to start monitoring: {str(e)}")
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Failed to start monitoring: {str(e)}\n{error_details}")
         activity_type = data.get('activity_type', 'badminton-16+')
         if activity_type in monitoring_processes:
             monitoring_processes[activity_type]['active'] = False
@@ -378,7 +388,9 @@ def select_slot():
                 status_code = 401
             return jsonify(result), status_code
     except Exception as e:
-        logger.error(f"Error selecting slot: {str(e)}")
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Error selecting slot: {str(e)}\n{error_details}")
         return jsonify({
             'success': False,
             'message': f'Error: {str(e)}',
@@ -421,7 +433,9 @@ def submit_contact():
                 status_code = 401
             return jsonify(result), status_code
     except Exception as e:
-        logger.error(f"Error submitting contact info: {str(e)}")
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Error submitting contact info: {str(e)}\n{error_details}")
         return jsonify({
             'success': False,
             'message': f'Error: {str(e)}'
@@ -457,6 +471,10 @@ def check_now():
         slots = result.get('slots', []) if result.get('success') else []
         screenshot_path = result.get('screenshot')
         
+        # Send Telegram notification if slots found (single check)
+        if slots:
+            telegram.notify_slot_found(slots, activity_type)
+        
         # Update monitoring process if it exists
         if activity_type in monitoring_processes:
             if screenshot_path:
@@ -482,10 +500,16 @@ def check_now():
                 'error_details': result.get('error_details')
             }), 500
     except Exception as e:
-        logger.error(f"Error in manual check: {str(e)}")
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Error in manual check: {str(e)}\n{error_details}")
         return jsonify({
             'success': False,
-            'message': f'Error: {str(e)}'
+            'slots': [],
+            'screenshot': None,
+            'message': f'Error: {str(e)}',
+            'error_type': 'unknown_error',
+            'error_details': str(e)
         }), 500
 
 

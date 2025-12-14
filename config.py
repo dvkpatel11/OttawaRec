@@ -12,10 +12,16 @@ BOOKING_BASE_URL = "https://reservation.frontdesksuite.ca/rcfs/cardelrec"
 BOOKING_CF_URL = "https://reservation-cf.frontdeskqms.ca/rcfs/cardelrec"
 
 # Activity Button IDs (extensible for other sports)
+# Note: As of 2024, racquet sports (Badminton, Pickleball) are now organized 
+# under the "Gymnasium sports" category in the Ottawa recreation booking system.
+# 
+# IMPORTANT: Button IDs are now extracted dynamically from the booking page HTML.
+# These values are kept as fallback/validation only and may be outdated.
+# The scraper will extract actual button IDs from the page at runtime.
 ACTIVITY_BUTTON_IDS = {
-    'badminton-16+': '2eabeb33-a464-4fd2-af23-6e79329b28d6',
-    'badminton-family': 'a44fd57e-8b7d-4594-91f5-ff09cd8d4d17',
-    'pickleball': 'bb019a53-4c8e-4cb6-a8bb-a1d744c45c1c',
+    'badminton-16+': '052c6dfe-5a5c-4e7e-a4ad-f25ce0a4cdb1',  # Fallback - may be outdated
+    'badminton-family': 'a44fd57e-8b7d-4594-91f5-ff09cd8d4d17',  # Fallback - may be outdated
+    'pickleball': 'bb019a53-4c8e-4cb6-a8bb-a1d744c45c1c',  # Fallback - may be outdated
     # Add more activities here as needed
 }
 
