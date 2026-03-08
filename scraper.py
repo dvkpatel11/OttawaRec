@@ -18,7 +18,8 @@ from typing import Dict, List, Optional, Tuple
 from config import (
     BOOKING_BASE_URL, BOOKING_CF_URL, ACTIVITY_BUTTON_IDS, PAGE_ID,
     DEFAULT_GROUP_SIZE, DEFAULT_CULTURE, DEFAULT_UI_CULTURE,
-    REQUEST_DELAY, REQUEST_TIMEOUT, NAVIGATION_DELAY_MIN, NAVIGATION_DELAY_MAX
+    REQUEST_DELAY, REQUEST_TIMEOUT, NAVIGATION_DELAY_MIN, NAVIGATION_DELAY_MAX,
+    build_booking_url, build_booking_cf_url
 )
 import random
 
@@ -28,7 +29,8 @@ logger = logging.getLogger(__name__)
 class OttawaRecBookingScraper:
     """Scraper for Ottawa Recreation booking system"""
     
-    def __init__(self):
+    def __init__(self, center: str = "cardelrec"):
+        self.center = center
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -41,8 +43,8 @@ class OttawaRecBookingScraper:
         self.activity_button_ids = {}  # Cache button IDs extracted at startup
         # These will be set from the page during initialize_session():
         self.initial_page_url = None  # URL of the initial booking page
-        self.booking_base_url = BOOKING_BASE_URL  # Can be updated from page
-        self.booking_cf_url = BOOKING_CF_URL  # Can be updated from page
+        self.booking_base_url = build_booking_url(center)
+        self.booking_cf_url = build_booking_cf_url(center)
         
     def _delay(self):
         """Add delay between requests"""
@@ -195,7 +197,7 @@ class OttawaRecBookingScraper:
                 if link_info['href'].startswith('http'):
                     link_info['full_url'] = link_info['href']
                 elif link_info['href'].startswith('/'):
-                    link_info['full_url'] = f"{BOOKING_CF_URL}{link_info['href']}"
+                    link_info['full_url'] = f"{self.booking_cf_url}{link_info['href']}"
             structure['links'].append(link_info)
         
         # Extract forms
@@ -225,7 +227,7 @@ class OttawaRecBookingScraper:
         """Initialize session with booking system"""
         try:
             response = self.session.get(
-                BOOKING_BASE_URL,
+                self.booking_base_url,
                 timeout=REQUEST_TIMEOUT,
                 allow_redirects=True
             )
@@ -294,15 +296,15 @@ class OttawaRecBookingScraper:
             
             # 3. Extract base URLs from page if they differ (for future use)
             # The URLs are typically consistent, but we store the actual page URL
-            if response.url and response.url != BOOKING_BASE_URL:
+            if response.url and response.url != self.booking_base_url:
                 # If redirected, update base URL
                 base_match = re.search(r'(https?://[^/]+)', response.url)
                 if base_match:
                     base = base_match.group(1)
                     if 'frontdesksuite' in base:
-                        self.booking_base_url = base + '/rcfs/cardelrec'
+                        self.booking_base_url = base + f'/rcfs/{self.center}'
                     elif 'frontdeskqms' in base:
-                        self.booking_cf_url = base + '/rcfs/cardelrec'
+                        self.booking_cf_url = base + f'/rcfs/{self.center}'
             
             # Log session initialization details
             logger.info(f"Session initialized - Session ID: {self.current_session_id[:20] if self.current_session_id else 'None'}..., Page ID: {self.current_page_id}")
@@ -448,7 +450,7 @@ class OttawaRecBookingScraper:
                 return False
             
             # Navigate to StartReservation (this establishes flow state and redirects)
-            url = f"{BOOKING_CF_URL}/ReserveTime/StartReservation"
+            url = f"{self.booking_cf_url}/ReserveTime/StartReservation"
             params = {
                 'pageId': self.current_page_id,
                 'buttonId': button_id,
@@ -530,7 +532,7 @@ class OttawaRecBookingScraper:
                 return True
             else:
                 # Try to navigate to SlotCountSelection (simplified - just construct URL)
-                url = f"{BOOKING_CF_URL}/ReserveTime/SlotCountSelection"
+                url = f"{self.booking_cf_url}/ReserveTime/SlotCountSelection"
                 params = {
                     'pageId': self.current_page_id,
                     'buttonId': button_id,
@@ -566,7 +568,7 @@ class OttawaRecBookingScraper:
             }
             
             # POST to SlotCountSelection endpoint (simplified)
-            post_url = self.last_activity_url if (self.last_activity_url and 'SlotCountSelection' in self.last_activity_url) else f"{BOOKING_CF_URL}/ReserveTime/SlotCountSelection"
+            post_url = self.last_activity_url if (self.last_activity_url and 'SlotCountSelection' in self.last_activity_url) else f"{self.booking_cf_url}/ReserveTime/SlotCountSelection"
             
             logger.info(f"Submitting group size form to: {post_url}")
             response = self.session.post(
@@ -682,7 +684,7 @@ class OttawaRecBookingScraper:
                 response = self.session.get(self.last_activity_url, timeout=REQUEST_TIMEOUT, allow_redirects=True)
             else:
                 # Construct TimeSelection URL (simplified - use cached button ID)
-                url = f"{BOOKING_CF_URL}/ReserveTime/TimeSelection"
+                url = f"{self.booking_cf_url}/ReserveTime/TimeSelection"
                 params = {
                     'culture': DEFAULT_CULTURE,
                     'pageId': self.current_page_id,
@@ -1004,7 +1006,7 @@ class OttawaRecBookingScraper:
                 return {'success': False, 'message': f'Unknown activity type: {activity_type}'}
             
             # Get the time selection page to get CSRF token
-            url = f"{BOOKING_CF_URL}/ReserveTime/TimeSelection"
+            url = f"{self.booking_cf_url}/ReserveTime/TimeSelection"
             params = {
                 'culture': DEFAULT_CULTURE,
                 'pageId': self.current_page_id,
@@ -1035,7 +1037,7 @@ class OttawaRecBookingScraper:
             }
             
             response = self.session.post(
-                f"{BOOKING_CF_URL}/ReserveTime/SubmitTimeSelection",
+                f"{self.booking_cf_url}/ReserveTime/SubmitTimeSelection",
                 data=form_data,
                 params={'culture': DEFAULT_CULTURE},
                 timeout=REQUEST_TIMEOUT,
@@ -1341,7 +1343,7 @@ class OttawaRecBookingScraper:
             # Get the current ContactInfo page to get CSRF token
             # We need to be on the ContactInfo page - if not, we can't submit
             # Try to get the page URL from the last booking result or navigate there
-            url = f"{BOOKING_CF_URL}/ReserveTime/ContactInfo"
+            url = f"{self.booking_cf_url}/ReserveTime/ContactInfo"
             
             # Try to get the ContactInfo page
             response = self.session.get(url, timeout=REQUEST_TIMEOUT, allow_redirects=True)
@@ -1382,7 +1384,7 @@ class OttawaRecBookingScraper:
             
             # Submit the form
             response = self.session.post(
-                f"{BOOKING_CF_URL}/ReserveTime/SubmitContactInfo",
+                f"{self.booking_cf_url}/ReserveTime/SubmitContactInfo",
                 data=form_data,
                 params={'culture': DEFAULT_CULTURE},
                 timeout=REQUEST_TIMEOUT,

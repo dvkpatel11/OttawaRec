@@ -1,1222 +1,516 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ottawa Rec Booking</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Rajdhani', sans-serif;
-            background: #0a0e27;
-            background-image: 
-                radial-gradient(circle at 20% 50%, rgba(0, 255, 255, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 80% 80%, rgba(255, 0, 255, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 40% 20%, rgba(0, 255, 0, 0.05) 0%, transparent 50%);
-            color: #00ffff;
-            padding: 10px;
-            min-height: 100vh;
-        }
-        
-        @media (max-width: 768px) {
-            body {
-                padding: 10px 5px;
-            }
-            
-            h1 {
-                font-size: 2em !important;
-                letter-spacing: 1px !important;
-            }
-            
-            .subtitle {
-                font-size: 1em !important;
-            }
-            
-            .table-container {
-                overflow-x: auto;
-                overflow-y: visible;
-                -webkit-overflow-scrolling: touch;
-                width: 100%;
-                max-width: 100vw;
-                display: block;
-            }
-            
-            table {
-                min-width: 600px;
-                width: 100%;
-                display: table;
-            }
-            
-            th, td {
-                padding: 12px 8px !important;
-                font-size: 0.85em !important;
-            }
-            
-            th {
-                font-size: 0.75em !important;
-                letter-spacing: 1px !important;
-            }
-            
-            .sport-name {
-                font-size: 1em !important;
-            }
-            
-            .status-text {
-                font-size: 0.85em !important;
-            }
-            
-            .countdown-timer {
-                font-size: 0.9em !important;
-                display: block;
-                margin-top: 4px;
-            }
-            
-            .group-size-input {
-                width: 60px !important;
-                padding: 8px !important;
-                font-size: 0.9em !important;
-            }
-            
-            button {
-                padding: 10px 16px !important;
-                font-size: 0.9em !important;
-                min-width: 44px;
-                min-height: 44px;
-            }
-            
-            .button-group {
-                flex-wrap: wrap;
-                gap: 6px;
-            }
-            
-            #alerts {
-                bottom: 10px;
-                right: 10px;
-                left: 10px;
-                max-width: none;
-            }
-            
-            .alert {
-                padding: 12px 35px 12px 15px;
-                font-size: 0.9em;
-            }
-        }
-        
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            padding: 20px;
-            border-bottom: 2px solid #00ffff;
-            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
-        }
-        
-        h1 {
-            font-family: 'Orbitron', monospace;
-            color: #00ffff;
-            margin-bottom: 10px;
-            font-size: 3em;
-            font-weight: 700;
-            text-shadow: 
-                0 0 10px rgba(0, 255, 255, 0.8),
-                0 0 20px rgba(0, 255, 255, 0.5),
-                0 0 30px rgba(0, 255, 255, 0.3);
-            letter-spacing: 3px;
-        }
-        
-        .subtitle {
-            color: #00ff88;
-            font-size: 1.2em;
-            font-weight: 500;
-            letter-spacing: 2px;
-        }
-        
-        .table-container {
-            background: rgba(10, 14, 39, 0.8);
-            border: 2px solid #00ffff;
-            border-radius: 8px;
-            box-shadow: 
-                0 0 20px rgba(0, 255, 255, 0.3),
-                inset 0 0 20px rgba(0, 255, 255, 0.1);
-            overflow-x: auto;
-            overflow-y: visible;
-            backdrop-filter: blur(10px);
-            -webkit-overflow-scrolling: touch;
-        }
-        
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        
-        thead {
-            background: linear-gradient(135deg, rgba(0, 255, 255, 0.2) 0%, rgba(255, 0, 255, 0.2) 100%);
-            border-bottom: 2px solid #00ffff;
-        }
-        
-        th {
-            padding: 20px;
-            text-align: left;
-            font-weight: 700;
-            font-size: 1.1em;
-            font-family: 'Orbitron', monospace;
-            color: #00ffff;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            text-shadow: 0 0 10px rgba(0, 255, 255, 0.8);
-        }
-        
-        th:first-child {
-            width: 20%;
-        }
-        
-        th:nth-child(2) {
-            width: 12%;
-        }
-        
-        th:nth-child(3) {
-            width: 25%;
-        }
-        
-        th:nth-child(4) {
-            width: 15%;
-        }
-        
-        th:last-child {
-            width: 28%;
-        }
-        
-        tbody tr {
-            border-bottom: 1px solid rgba(0, 255, 255, 0.2);
-            transition: all 0.3s ease;
-        }
-        
-        tbody tr:hover {
-            background-color: rgba(0, 255, 255, 0.1);
-            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
-        }
-        
-        tbody tr:last-child {
-            border-bottom: none;
-        }
-        
-        td {
-            padding: 20px;
-            vertical-align: middle;
-        }
-        
-        .sport-name {
-            font-weight: 600;
-            color: #00ffff;
-            font-size: 1.2em;
-            font-family: 'Orbitron', monospace;
-            text-shadow: 0 0 5px rgba(0, 255, 255, 0.5);
-        }
-        
-        .status-indicator {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-        
-        .status-indicator.active {
-            background: #00ff88;
-            box-shadow: 0 0 10px #00ff88, 0 0 20px #00ff88;
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-        
-        .status-indicator.inactive {
-            background: rgba(255, 255, 255, 0.3);
-        }
-        
-        .status-text {
-            color: #00ffff;
-            font-size: 0.95em;
-            font-weight: 500;
-        }
-        
-        .countdown-timer {
-            color: #00ff88;
-            font-family: 'Orbitron', monospace;
-            font-weight: 700;
-            font-size: 0.95em;
-            margin-left: 12px;
-            text-shadow: 0 0 5px rgba(0, 255, 136, 0.5);
-            display: inline-block;
-            white-space: nowrap;
-        }
-        
-        .status-cell {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-        }
-        
-        .status-cell > span:first-child {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
-        
-        @media (max-width: 768px) {
-            .countdown-timer {
-                margin-left: 0;
-                margin-top: 4px;
-                display: block;
-                font-size: 0.85em;
-            }
-            
-            .status-cell {
-                gap: 2px;
-                align-items: center;
-                justify-content: center;
-                text-align: center;
-            }
-            
-            #contactModal {
-                padding: 10px !important;
-            }
-            
-            #contactModal > div {
-                max-width: 100% !important;
-                padding: 20px !important;
-                max-height: 95vh !important;
-            }
-            
-            #contactModal h3 {
-                font-size: 1.2em !important;
-            }
-            
-            #contactModal .form-input {
-                font-size: 16px !important; /* Prevents zoom on iOS */
-            }
-        }
-        
-        .group-size-input {
-            width: 80px;
-            padding: 10px;
-            background: rgba(0, 0, 0, 0.5);
-            border: 2px solid #00ffff;
-            border-radius: 4px;
-            font-size: 1em;
-            text-align: center;
-            color: #00ffff;
-            font-family: 'Orbitron', monospace;
-            font-weight: 600;
-        }
-        
-        .group-size-input::placeholder {
-            color: rgba(0, 255, 255, 0.5);
-        }
-        
-        .group-size-input:focus {
-            outline: none;
-            border-color: #00ff88;
-            box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
-        }
-        
-        .group-size-input:disabled {
-            background-color: rgba(0, 0, 0, 0.3);
-            border-color: rgba(0, 255, 255, 0.3);
-            color: rgba(0, 255, 255, 0.5);
-            cursor: not-allowed;
-            opacity: 0.6;
-        }
-        
-        .form-input::placeholder {
-            color: rgba(0, 255, 255, 0.5);
-        }
-        
-        .form-input option {
-            background: #0a0e27;
-            color: #00ffff;
-        }
-        
-        .button-group {
-            display: flex;
-            gap: 10px;
-        }
-        
-        button {
-            padding: 12px 24px;
-            font-size: 1em;
-            font-weight: 600;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        .btn-start {
-            background: linear-gradient(135deg, rgba(0, 255, 136, 0.3) 0%, rgba(0, 255, 255, 0.3) 100%);
-            color: #00ff88;
-            border: 2px solid #00ff88;
-            box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
-        }
-        
-        .btn-start:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 0 20px rgba(0, 255, 136, 0.8), 0 0 30px rgba(0, 255, 136, 0.5);
-            background: linear-gradient(135deg, rgba(0, 255, 136, 0.5) 0%, rgba(0, 255, 255, 0.5) 100%);
-        }
-        
-        .btn-stop {
-            background: rgba(255, 0, 100, 0.3);
-            color: #ff0064;
-            border: 2px solid #ff0064;
-            box-shadow: 0 0 10px rgba(255, 0, 100, 0.5);
-        }
-        
-        .btn-stop:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 0 20px rgba(255, 0, 100, 0.8), 0 0 30px rgba(255, 0, 100, 0.5);
-            background: rgba(255, 0, 100, 0.5);
-        }
-        
-        .btn-check {
-            background: rgba(0, 150, 255, 0.3);
-            color: #0096ff;
-            border: 2px solid #0096ff;
-            box-shadow: 0 0 10px rgba(0, 150, 255, 0.5);
-        }
-        
-        .btn-check:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 0 20px rgba(0, 150, 255, 0.8), 0 0 30px rgba(0, 150, 255, 0.5);
-            background: rgba(0, 150, 255, 0.5);
-        }
-        
-        button:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-            box-shadow: none;
-        }
-        
-        
-        #alerts {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            z-index: 1000;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            max-width: 400px;
-        }
-        
-        .alert {
-            position: relative;
-            padding: 15px 40px 15px 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            animation: slideIn 0.3s ease;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        
-        .alert-close {
-            position: absolute;
-            top: 8px;
-            right: 8px;
-            background: transparent;
-            border: none;
-            color: inherit;
-            font-size: 20px;
-            cursor: pointer;
-            padding: 4px 8px;
-            line-height: 1;
-            opacity: 0.7;
-            transition: opacity 0.2s ease;
-            width: 24px;
-            height: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .alert-close:hover {
-            opacity: 1;
-        }
-        
-        .alert-close:focus {
-            outline: 2px solid currentColor;
-            outline-offset: 2px;
-            border-radius: 4px;
-        }
-        
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-        
-        @keyframes slideOut {
-            from {
-                transform: translateX(0);
-                opacity: 1;
-            }
-            to {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-        }
-        
-        .alert-success {
-            background: rgba(0, 255, 136, 0.2);
-            color: #00ff88;
-            border-left: 4px solid #00ff88;
-            box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
-        }
-        
-        .alert-error {
-            background: rgba(255, 0, 100, 0.2);
-            color: #ff0064;
-            border-left: 4px solid #ff0064;
-            box-shadow: 0 0 10px rgba(255, 0, 100, 0.5);
-        }
-        
-        .alert-info {
-            background: rgba(0, 255, 255, 0.2);
-            color: #00ffff;
-            border-left: 4px solid #00ffff;
-            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ottawa Rec Booking</title>
+  <style>
+    :root {
+      --pl-purple: #37003c;
+      --pl-purple-2: #5b0a67;
+      --pl-cyan: #00f0ff;
+      --pl-pink: #ff2a6d;
+      --pl-green: #00ff9f;
+      --ink: #ffffff;
+      --muted: #cdb9d4;
+      --panel: rgba(33, 5, 48, 0.75);
+      --border: rgba(255, 255, 255, 0.14);
+      --shadow: 0 22px 60px rgba(9, 0, 18, 0.55);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      min-height: 100vh;
+      background:
+        radial-gradient(1000px 500px at 10% -5%, rgba(0, 240, 255, 0.24), transparent 60%),
+        radial-gradient(900px 520px at 90% 110%, rgba(255, 42, 109, 0.22), transparent 65%),
+        linear-gradient(135deg, #1f0124 0%, var(--pl-purple) 34%, var(--pl-purple-2) 100%);
+    }
+
+    .page {
+      max-width: 1260px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .hero {
+      border-radius: 22px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background:
+        linear-gradient(110deg, rgba(0, 240, 255, .12), rgba(255, 42, 109, .1)),
+        rgba(48, 8, 64, .8);
+      box-shadow: var(--shadow);
+      padding: 18px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+      backdrop-filter: blur(10px);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-weight: 900;
+      font-size: clamp(1.35rem, 3vw, 2rem);
+      letter-spacing: .4px;
+      text-transform: uppercase;
+      text-shadow: 0 0 24px rgba(0, 240, 255, .24);
+    }
+
+    .brand p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: .95rem;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 12px;
+      color: #fff;
+      cursor: pointer;
+      font-weight: 700;
+      padding: 10px 14px;
+      transition: transform .16s ease, box-shadow .2s ease, filter .2s ease;
+    }
+    .btn:hover { transform: translateY(-1px); filter: brightness(1.08); }
+    .btn:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+
+    .btn-primary { background: linear-gradient(130deg, #4f22c5, #7a2fff); box-shadow: 0 10px 24px rgba(122, 47, 255, .32); }
+    .btn-success { background: linear-gradient(130deg, #00ae6b, var(--pl-green)); color: #102c23; box-shadow: 0 10px 24px rgba(0, 255, 159, .28); }
+    .btn-danger { background: linear-gradient(130deg, #d01f5a, var(--pl-pink)); box-shadow: 0 10px 24px rgba(255, 42, 109, .28); }
+    .btn-ghost { background: linear-gradient(130deg, rgba(255,255,255,.2), rgba(255,255,255,.08)); border: 1px solid rgba(255,255,255,.22); }
+
+    .kpi {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0,1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .kpi-card {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      border-radius: 14px;
+      padding: 10px 12px;
+      box-shadow: var(--shadow);
+    }
+
+    .kpi-label { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .5px; }
+    .kpi-value { font-size: 1.1rem; font-weight: 800; margin-top: 4px; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0,1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .panel {
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+      padding: 14px;
+    }
+
+    .panel h3 { margin: 0 0 10px; font-size: 1rem; font-weight: 800; }
+
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .field, .select, .number {
+      flex: 1;
+      min-width: 160px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      padding: 10px 11px;
+      outline: none;
+    }
+    .field::placeholder { color: rgba(255,255,255,.68); }
+
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,.2);
+      background: rgba(255,255,255,.08);
+      color: #fff;
+      padding: 10px 12px;
+      font-size: .92rem;
+    }
+
+    .table-panel { border-radius: 18px; overflow: hidden; }
+    .table-wrap { overflow-x: auto; }
+
+    table { width: 100%; border-collapse: collapse; min-width: 960px; }
+
+    th {
+      padding: 12px;
+      text-align: left;
+      text-transform: uppercase;
+      letter-spacing: .55px;
+      font-size: .78rem;
+      color: #fff;
+      background: linear-gradient(130deg, rgba(0,240,255,.16), rgba(255,42,109,.17));
+      border-bottom: 1px solid rgba(255,255,255,.2);
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    td {
+      padding: 12px;
+      border-bottom: 1px solid rgba(255,255,255,.12);
+      vertical-align: top;
+      font-size: .92rem;
+    }
+
+    tr:hover td { background: rgba(255,255,255,.06); }
+
+    .sport-name { font-weight: 800; }
+    .sport-id { font-size: .75rem; color: var(--muted); margin-top: 2px; }
+
+    .actions { display: flex; flex-wrap: wrap; gap: 7px; }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: .79rem;
+      font-weight: 800;
+      letter-spacing: .2px;
+    }
+    .status-idle { background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.22); color: #fff; }
+    .status-active { background: rgba(0,255,159,.18); border: 1px solid rgba(0,255,159,.33); color: #c9ffe8; }
+    .status-stop { background: rgba(255,42,109,.2); border: 1px solid rgba(255,42,109,.35); color: #ffd6e5; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+    .slots { display: flex; flex-direction: column; gap: 6px; }
+    .slot {
+      border: 1px solid rgba(255,255,255,.19);
+      background: rgba(255,255,255,.08);
+      border-radius: 10px;
+      padding: 7px 9px;
+      font-size: .84rem;
+    }
+
+    .muted { color: var(--muted); }
+
+    .toast-stack {
+      position: fixed;
+      right: 12px;
+      bottom: 12px;
+      max-width: min(420px, calc(100vw - 24px));
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 999;
+    }
+
+    .toast {
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,.2);
+      padding: 10px 12px;
+      font-size: .9rem;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+      color: #fff;
+    }
+    .toast-success { background: rgba(0, 172, 104, .85); }
+    .toast-error { background: rgba(182, 25, 80, .9); }
+    .toast-info { background: rgba(69, 31, 118, .9); }
+
+    @media (max-width: 980px) {
+      .grid { grid-template-columns: 1fr; }
+      .kpi { grid-template-columns: 1fr; }
+      .hero { flex-direction: column; align-items: flex-start; }
+    }
+
+    @media (max-width: 720px) {
+      .page { padding: 14px; }
+      table, thead, tbody, th, tr, td { display: block; }
+      table { min-width: 0; }
+      thead { display: none; }
+      tr {
+        border: 1px solid rgba(255,255,255,.18);
+        border-radius: 14px;
+        margin-bottom: 10px;
+        background: rgba(255,255,255,.06);
+      }
+      td { border: none; padding: 9px 10px; }
+      td::before {
+        content: attr(data-label);
+        display: block;
+        font-size: .72rem;
+        color: var(--muted);
+        letter-spacing: .45px;
+        text-transform: uppercase;
+        margin-bottom: 3px;
+      }
+      .field, .select, .number { min-width: 100%; }
+      .actions .btn { flex: 1; min-width: 92px; }
+    }
+  </style>
 </head>
 <body>
-    <div class="header">
-        <h1>🏸 Ottawa Rec Booking</h1>
-    </div>
-    
-    <div id="alerts"></div>
-    
-    <div class="table-container">
+  <div class="page">
+    <section class="hero">
+      <div class="brand">
+        <h1>Premier Ottawa Rec Booking</h1>
+        <p>Elite control center for sports slots, telegram notifications, and multi-center monitoring.</p>
+      </div>
+      <button class="btn btn-ghost" onclick="logout()">Logout</button>
+    </section>
+
+    <section class="kpi">
+      <div class="kpi-card">
+        <div class="kpi-label">Configured Sports</div>
+        <div class="kpi-value" id="kpiSports">0</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Tracked Centers</div>
+        <div class="kpi-value" id="kpiCenters">0</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Active Monitors</div>
+        <div class="kpi-value" id="kpiActive">0</div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="panel">
+        <h3>Telegram Recipients</h3>
+        <div class="row">
+          <input id="phoneNumbers" class="field" placeholder="Phone numbers (comma separated)" />
+          <input id="chatIds" class="field" placeholder="Telegram chat IDs (comma separated)" />
+          <button class="btn btn-success" onclick="saveRecipients()">Save</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Add Sport</h3>
+        <div class="row">
+          <input id="sportId" class="field" placeholder="sport id (e.g. volleyball)" />
+          <input id="sportName" class="field" placeholder="Sport display name" />
+          <label class="toggle"><input type="checkbox" id="sportGroup" checked /> Group size required</label>
+          <button class="btn btn-primary" onclick="addSport()">Add Sport</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel table-panel">
+      <div class="table-wrap">
         <table>
-            <thead>
-                <tr>
-                    <th>Sport</th>
-                    <th>Group Size</th>
-                    <th>Actions</th>
-                    <th>Status</th>
-                    <th>Details</th>
-                </tr>
-            </thead>
-            <tbody id="sportsTable">
-                <!-- Rows will be populated by JavaScript -->
-            </tbody>
+          <thead>
+            <tr>
+              <th>Sport</th>
+              <th>Center</th>
+              <th>Group Size</th>
+              <th>Actions</th>
+              <th>Status</th>
+              <th>Latest Slots</th>
+            </tr>
+          </thead>
+          <tbody id="sportsTable"></tbody>
         </table>
-    </div>
-    
-    <script>
-        const sports = [
-            { id: 'badminton-16+', name: 'Badminton (16+)', groupSizeRequired: true },
-            { id: 'badminton-family', name: 'Badminton (Family)', groupSizeRequired: false },
-            { id: 'pickleball', name: 'Pickleball', groupSizeRequired: true }
-        ];
-        
-        const monitoringState = {};
-        const checkingState = {}; // Track which sports are currently being checked
-        const countdownTimers = {}; // Track countdown timers for each sport
-        const lastCheckTimes = {}; // Track when each sport was last checked
-        const CHECK_INTERVAL = 300; // 5 minutes in seconds
-        
-        function showAlert(message, type = 'info') {
-            const alerts = document.getElementById('alerts');
-            const alert = document.createElement('div');
-            alert.className = `alert alert-${type}`;
-            
-            // Create message text
-            const messageText = document.createElement('span');
-            messageText.textContent = message;
-            alert.appendChild(messageText);
-            
-            // Create close button
-            const closeBtn = document.createElement('button');
-            closeBtn.className = 'alert-close';
-            closeBtn.innerHTML = '×';
-            closeBtn.setAttribute('aria-label', 'Close');
-            closeBtn.onclick = () => {
-                alert.style.animation = 'slideOut 0.3s ease';
-                setTimeout(() => {
-                    alert.remove();
-                }, 300);
-            };
-            alert.appendChild(closeBtn);
-            
-            alerts.appendChild(alert);
-            
-            // Auto-remove after 5 seconds
-            setTimeout(() => {
-                if (alert.parentNode) {
-                    alert.style.animation = 'slideOut 0.3s ease';
-                    setTimeout(() => {
-                        if (alert.parentNode) {
-                            alert.remove();
-                        }
-                    }, 300);
-                }
-            }, 5000);
-        }
-        
-        function updateStatus() {
-            fetch('/api/status')
-                .then(res => res.json())
-                .then(data => {
-                    // Update each sport's status
-                    sports.forEach(sport => {
-                        const state = data.processes?.[sport.id] || { active: false };
-                        const currentState = monitoringState[sport.id] || {};
-                        
-                        // Track when monitoring becomes active to start countdown
-                        if (state.active && !currentState.active) {
-                            // Just started monitoring - set last check time to now
-                            lastCheckTimes[sport.id] = Date.now();
-                            // Start countdown immediately
-                            if (!countdownTimers[sport.id]) {
-                                startCountdown(sport.id);
-                            }
-                        } else if (!state.active && currentState.active) {
-                            // Just stopped monitoring - clear countdown
-                            stopCountdown(sport.id);
-                            delete lastCheckTimes[sport.id];
-                        } else if (state.active) {
-                            // Monitoring is active - ensure countdown is running
-                            if (!lastCheckTimes[sport.id]) {
-                                lastCheckTimes[sport.id] = Date.now();
-                            }
-                            // Ensure countdown is running
-                            if (!countdownTimers[sport.id]) {
-                                startCountdown(sport.id);
-                            }
-                        }
-                        
-                        // Merge state: preserve slots from checkNow() unless process is active and has new slots
-                        if (state.active && state.slots !== undefined) {
-                            // Active monitoring - update with new slots
-                            monitoringState[sport.id] = {
-                                ...currentState,
-                                ...state,
-                                slots: state.slots
-                            };
-                        } else {
-                            // Not active - preserve existing slots from checkNow(), but update other fields
-                            monitoringState[sport.id] = {
-                                ...currentState,
-                                ...state,
-                                slots: currentState.slots !== undefined ? currentState.slots : state.slots
-                            };
-                        }
-                        updateSportRow(sport.id);
-                    });
-                })
-                .catch(err => console.error('Status check failed:', err));
-        }
-        
-        function formatTime(seconds) {
-            const mins = Math.floor(seconds / 60);
-            const secs = seconds % 60;
-            return `${mins}:${secs.toString().padStart(2, '0')}`;
-        }
-        
-        function updateCountdown(sportId) {
-            // Check if monitoring is still active
-            if (!monitoringState[sportId]?.active) {
-                return;
-            }
-            
-            if (!lastCheckTimes[sportId]) {
-                // If no last check time but monitoring is active, set it to now
-                lastCheckTimes[sportId] = Date.now();
-            }
-            
-            const now = Date.now();
-            const elapsed = Math.floor((now - lastCheckTimes[sportId]) / 1000);
-            const remaining = Math.max(0, CHECK_INTERVAL - elapsed);
-            
-            const statusCell = document.querySelector(`#row-${sportId} .status-cell`);
-            if (!statusCell) {
-                return;
-            }
-            
-            let timerElement = statusCell.querySelector('.countdown-timer');
-            
-            // Create timer element if it doesn't exist
-            if (!timerElement) {
-                timerElement = document.createElement('span');
-                timerElement.className = 'countdown-timer';
-                statusCell.appendChild(timerElement);
-            }
-            
-            // Update timer text
-            if (remaining > 0) {
-                timerElement.textContent = `Next check in ${formatTime(remaining)}`;
-            } else {
-                timerElement.textContent = 'Checking...';
-                // Reset countdown after check completes
-                if (monitoringState[sportId]?.active) {
-                    lastCheckTimes[sportId] = Date.now();
-                }
-            }
-        }
-        
-        function startCountdown(sportId) {
-            // Clear any existing timer
-            stopCountdown(sportId);
-            
-            // Update immediately
-            updateCountdown(sportId);
-            
-            // Update every second
-            countdownTimers[sportId] = setInterval(() => {
-                updateCountdown(sportId);
-            }, 1000);
-        }
-        
-        function stopCountdown(sportId) {
-            if (countdownTimers[sportId]) {
-                clearInterval(countdownTimers[sportId]);
-                delete countdownTimers[sportId];
-            }
-            
-            const statusCell = document.querySelector(`#row-${sportId} .status-cell`);
-            if (statusCell) {
-                const timerElement = statusCell.querySelector('.countdown-timer');
-                if (timerElement) {
-                    timerElement.remove();
-                }
-            }
-        }
-        
-        function selectSlot(sportId, slotIndex) {
-            const state = monitoringState[sportId];
-            if (!state || !state.slots || !state.slots[slotIndex]) {
-                showAlert('Slot not available', 'error');
-                return;
-            }
-            
-            const slot = state.slots[slotIndex];
-            const groupSize = parseInt(document.getElementById(`group-${sportId}`).value) || 2;
-            
-            showAlert('Selecting slot and loading contact form...', 'info');
-            
-            fetch('/api/select-slot', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    activity_type: sportId,
-                    slot_data: slot,
-                    group_size: groupSize
-                })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success && data.fields) {
-                    showContactForm(sportId, slot, data.fields, data.csrf_token);
-                } else {
-                    const errorMsg = data.message || 'Failed to load contact form';
-                    const errorType = data.error_type ? ` (${data.error_type})` : '';
-                    showAlert(`${errorMsg}${errorType}`, 'error');
-                }
-            })
-            .catch(err => {
-                showAlert('Error: ' + err.message, 'error');
-            });
-        }
-        
-        function showContactForm(sportId, slot, fields, csrfToken) {
-            // Create modal or form display
-            const modal = document.createElement('div');
-            modal.id = 'contactModal';
-            modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 20px;';
-            modal.addEventListener('click', function(e) {
-                if (e.target === modal) {
-                    closeContactModal();
-                }
-            });
-            
-            const formDiv = document.createElement('div');
-            formDiv.style.cssText = 'background: #0a0e27; border: 2px solid #00ffff; padding: 30px; border-radius: 12px; max-width: 600px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 0 30px rgba(0, 255, 255, 0.5); position: relative;';
-            
-            let formHtml = `
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
-                    <h3 style="margin: 0; font-family: 'Orbitron', monospace; color: #00ffff; text-shadow: 0 0 10px rgba(0, 255, 255, 0.8); font-size: 1.5em; font-weight: 700;">Contact Information</h3>
-                    <button type="button" id="closeModalBtn" style="background: transparent; border: 2px solid #00ffff; color: #00ffff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 20px; line-height: 1; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease;" onmouseover="this.style.background='rgba(0,255,255,0.2)'" onmouseout="this.style.background='transparent'">×</button>
-                </div>
-                <div style="margin-bottom: 25px; padding: 15px; background: rgba(0, 255, 136, 0.1); border: 1px solid #00ff88; border-radius: 8px;">
-                    <div style="color: #00ff88; font-weight: 600; font-family: 'Orbitron', monospace; font-size: 1.1em;">${slot.full_datetime || slot.date + ' ' + slot.time}</div>
-                </div>
-                <form id="contactForm">
-                    <input type="hidden" name="csrf_token" value="${csrfToken || ''}">
-            `;
-            
-            fields.forEach(field => {
-                if (field.name && field.name !== '__RequestVerificationToken') {
-                    const label = field.label || field.name;
-                    const required = field.required ? 'required' : '';
-                    const placeholder = field.placeholder || '';
-                    
-                    if (field.type === 'select') {
-                        let optionsHtml = '<option value="" style="background: #0a0e27;">Select...</option>';
-                        if (field.options && Array.isArray(field.options)) {
-                            field.options.forEach(option => {
-                                const optionValue = option.value || '';
-                                const optionText = option.text || optionValue;
-                                optionsHtml += `<option value="${optionValue}" style="background: #0a0e27;">${optionText}</option>`;
-                            });
-                        }
-                        formHtml += `
-                            <div style="margin-bottom: 20px;">
-                                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #00ffff; font-family: 'Orbitron', monospace; font-size: 0.95em;">${label}${required ? ' <span style="color: #ff0064;">*</span>' : ''}</label>
-                                <select name="${field.name}" class="form-input" ${required} style="width: 100%; padding: 12px; background: rgba(0, 0, 0, 0.6); border: 2px solid #00ffff; border-radius: 6px; color: #00ffff; font-family: 'Rajdhani', sans-serif; font-weight: 500; font-size: 1em; box-sizing: border-box; cursor: pointer;">
-                                    ${optionsHtml}
-                                </select>
-                            </div>
-                        `;
-                    } else if (field.type === 'textarea') {
-                        formHtml += `
-                            <div style="margin-bottom: 20px;">
-                                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #00ffff; font-family: 'Orbitron', monospace; font-size: 0.95em;">${label}${required ? ' <span style="color: #ff0064;">*</span>' : ''}</label>
-                                <textarea name="${field.name}" class="form-input" ${required} placeholder="${placeholder}" style="width: 100%; padding: 12px; background: rgba(0, 0, 0, 0.6); border: 2px solid #00ffff; border-radius: 6px; min-height: 100px; color: #00ffff; font-family: 'Rajdhani', sans-serif; resize: vertical; font-size: 1em; box-sizing: border-box;"></textarea>
-                            </div>
-                        `;
-                    } else {
-                        formHtml += `
-                            <div style="margin-bottom: 20px;">
-                                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #00ffff; font-family: 'Orbitron', monospace; font-size: 0.95em;">${label}${required ? ' <span style="color: #ff0064;">*</span>' : ''}</label>
-                                <input type="${field.type || 'text'}" name="${field.name}" class="form-input" ${required} placeholder="${placeholder}" style="width: 100%; padding: 12px; background: rgba(0, 0, 0, 0.6); border: 2px solid #00ffff; border-radius: 6px; color: #00ffff; font-family: 'Rajdhani', sans-serif; font-weight: 500; font-size: 1em; box-sizing: border-box;">
-                            </div>
-                        `;
-                    }
-                }
-            });
-            
-            formHtml += `
-                    <div style="display: flex; gap: 12px; margin-top: 30px;">
-                        <button type="submit" style="flex: 1; padding: 14px; background: rgba(0, 255, 136, 0.3); color: #00ff88; border: 2px solid #00ff88; border-radius: 6px; cursor: pointer; font-weight: 700; font-family: 'Orbitron', monospace; font-size: 1em; box-shadow: 0 0 10px rgba(0, 255, 136, 0.5); transition: all 0.3s ease;" onmouseover="this.style.background='rgba(0,255,136,0.5)'; this.style.boxShadow='0 0 20px rgba(0,255,136,0.8)'" onmouseout="this.style.background='rgba(0,255,136,0.3)'; this.style.boxShadow='0 0 10px rgba(0,255,136,0.5)'">Submit</button>
-                        <button type="button" id="cancelModalBtn" style="flex: 1; padding: 14px; background: rgba(255, 0, 100, 0.2); color: #ff0064; border: 2px solid #ff0064; border-radius: 6px; cursor: pointer; font-weight: 600; font-family: 'Orbitron', monospace; font-size: 1em; transition: all 0.3s ease;" onmouseover="this.style.background='rgba(255,0,100,0.4)'" onmouseout="this.style.background='rgba(255,0,100,0.2)'">Cancel</button>
-                    </div>
-                </form>
-            `;
-            
-            formDiv.innerHTML = formHtml;
-            modal.appendChild(formDiv);
-            document.body.appendChild(modal);
-            
-            // Close modal function
-            function closeContactModal() {
-                const modal = document.getElementById('contactModal');
-                if (modal) {
-                    modal.remove();
-                }
-            }
-            
-            // Add close button handlers
-            const closeBtn = formDiv.querySelector('#closeModalBtn');
-            const cancelBtn = formDiv.querySelector('#cancelModalBtn');
-            if (closeBtn) {
-                closeBtn.addEventListener('click', closeContactModal);
-            }
-            if (cancelBtn) {
-                cancelBtn.addEventListener('click', closeContactModal);
-            }
-            
-            // Close on Escape key
-            const handleEscape = (e) => {
-                if (e.key === 'Escape') {
-                    closeContactModal();
-                    document.removeEventListener('keydown', handleEscape);
-                }
-            };
-            document.addEventListener('keydown', handleEscape);
-            
-            // Add focus styles to form inputs
-            const formInputs = formDiv.querySelectorAll('.form-input');
-            formInputs.forEach(input => {
-                input.addEventListener('focus', function() {
-                    this.style.borderColor = '#00ff88';
-                    this.style.boxShadow = '0 0 15px rgba(0, 255, 136, 0.6)';
-                    this.style.background = 'rgba(0, 0, 0, 0.8)';
-                });
-                input.addEventListener('blur', function() {
-                    this.style.borderColor = '#00ffff';
-                    this.style.boxShadow = 'none';
-                    this.style.background = 'rgba(0, 0, 0, 0.6)';
-                });
-            });
-            
-            // Handle form submission
-            document.getElementById('contactForm').addEventListener('submit', (e) => {
-                e.preventDefault();
-                const formData = new FormData(e.target);
-                const fieldValues = {};
-                formData.forEach((value, key) => {
-                    if (key !== 'csrf_token') {
-                        fieldValues[key] = value;
-                    }
-                });
-                
-                fetch('/api/submit-contact', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        activity_type: sportId,
-                        field_values: fieldValues
-                    })
-                })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success) {
-                        showAlert('Contact information submitted successfully!', 'success');
-                        closeContactModal();
-                        updateStatus();
-                    } else {
-                        const errorMsg = data.message || 'Failed to submit';
-                        const errorType = data.error_type ? ` (${data.error_type})` : '';
-                        showAlert(`${errorMsg}${errorType}`, 'error');
-                    }
-                })
-                .catch(err => {
-                    showAlert('Error: ' + err.message, 'error');
-                });
-            });
-            
-            // Prevent form submission from closing modal on error
-            const form = formDiv.querySelector('#contactForm');
-            if (form) {
-                form.addEventListener('submit', function(e) {
-                    // Form submission is handled by the fetch above
-                });
-            }
-        }
-        
-        function updateSportRow(sportId) {
-            const state = monitoringState[sportId] || { active: false };
-            const row = document.getElementById(`row-${sportId}`);
-            if (!row) return;
-            
-            const statusCell = row.querySelector('.status-cell');
-            const startBtn = row.querySelector('.btn-start');
-            const stopBtn = row.querySelector('.btn-stop');
-            const checkBtn = row.querySelector('.btn-check');
-            const detailsCell = row.querySelector('.details-cell');
-            
-            if (state.active) {
-                // Show monitoring status with countdown timer
-                // Don't replace innerHTML if timer exists - just update the status parts
-                const existingTimer = statusCell.querySelector('.countdown-timer');
-                const existingIndicator = statusCell.querySelector('.status-indicator');
-                const existingStatusText = statusCell.querySelector('.status-text');
-                
-                // Preserve timer if it exists
-                const timerText = existingTimer ? existingTimer.textContent : '';
-                
-                // Only update if elements don't exist
-                if (!existingIndicator || !existingStatusText) {
-                    // Create status indicator and text if missing
-                    const statusWrapper = document.createElement('span');
-                    statusWrapper.innerHTML = `
-                        <span class="status-indicator active"></span>
-                        <span class="status-text">Monitoring</span>
-                    `;
-                    // Clear and rebuild, but preserve timer
-                    if (existingTimer) {
-                        existingTimer.remove();
-                    }
-                    statusCell.innerHTML = '';
-                    statusCell.appendChild(statusWrapper);
-                } else {
-                    // Just ensure indicator is active
-                    existingIndicator.className = 'status-indicator active';
-                    existingStatusText.textContent = 'Monitoring';
-                }
-                
-                // Ensure countdown timer exists (re-add if it was removed)
-                if (!statusCell.querySelector('.countdown-timer')) {
-                    const timerElement = document.createElement('span');
-                    timerElement.className = 'countdown-timer';
-                    timerElement.textContent = timerText || 'Next check in 5:00';
-                    statusCell.appendChild(timerElement);
-                }
-                
-                // Ensure countdown is running
-                if (!countdownTimers[sportId]) {
-                    if (!lastCheckTimes[sportId]) {
-                        lastCheckTimes[sportId] = Date.now();
-                    }
-                    startCountdown(sportId);
-                } else {
-                    // Update countdown immediately if timer is already running
-                    updateCountdown(sportId);
-                }
-                
-                if (startBtn) startBtn.disabled = true;
-                if (stopBtn) stopBtn.disabled = false;
-                if (checkBtn) checkBtn.disabled = true;
-            } else {
-                statusCell.innerHTML = '<span class="status-indicator inactive"></span>';
-                // Stop countdown if monitoring is not active
-                stopCountdown(sportId);
-                if (startBtn) startBtn.disabled = false;
-                if (stopBtn) stopBtn.disabled = true;
-                if (checkBtn) checkBtn.disabled = false;
-            }
-            
-            // Always show details from latest check (even if no slots found)
-            // Check if we have slots data (even if empty array)
-            if (state.slots !== undefined) {
-                // Filter out disabled/unavailable slots (show only available ones)
-                const availableSlots = state.slots.filter(slot => {
-                    return !slot.disabled && slot.available !== false;
-                });
-                
-                // Extract filename from screenshot path (handle both / and \ separators)
-                let screenshotFilename = '';
-                if (state.screenshot) {
-                    const pathParts = state.screenshot.replace(/\\/g, '/').split('/');
-                    screenshotFilename = pathParts[pathParts.length - 1];
-                }
-                const screenshotLink = screenshotFilename ? 
-                    `<a href="/screenshots/${screenshotFilename}" target="_blank" class="detail-link" style="display: block; margin-top: 8px; color: #00ffff; text-decoration: none; font-weight: 600;">📄 View Details</a>` : '';
-                
-                const pageLink = `https://reservation.frontdesksuite.ca/rcfs/cardelrec`;
-                
-                if (availableSlots.length > 0) {
-                    // Show ALL slots (not limited)
-                    const slotsHtml = availableSlots.map((slot, index) => {
-                        const slotTime = slot.full_datetime || `${slot.date} ${slot.time}`;
-                        // Find original index in state.slots for selectSlot function
-                        const originalIndex = state.slots.indexOf(slot);
-                        return `
-                            <div style="margin-bottom: 8px; padding: 12px; background: rgba(0, 255, 255, 0.1); border: 1px solid rgba(0, 255, 255, 0.3); border-radius: 4px; box-shadow: 0 0 5px rgba(0, 255, 255, 0.2);">
-                                <div style="margin-bottom: 6px; font-weight: 600; color: #00ffff; font-family: 'Orbitron', monospace;">${slotTime}</div>
-                                <button onclick="selectSlot('${sportId}', ${originalIndex})" class="btn-book-slot" style="padding: 6px 16px; font-size: 0.85em; cursor: pointer; border-radius: 4px; background: rgba(0, 255, 136, 0.3); color: #00ff88; border: 2px solid #00ff88; font-weight: 600; transition: all 0.3s ease;" onmouseover="this.style.background='rgba(0,255,136,0.5)'" onmouseout="this.style.background='rgba(0,255,136,0.3)'">Book</button>
-                            </div>
-                        `;
-                    }).join('');
-                    
-                    detailsCell.innerHTML = `
-                        <div>
-                            <div style="margin-bottom: 12px; font-weight: 700; color: #00ff88; font-family: 'Orbitron', monospace; text-shadow: 0 0 5px rgba(0, 255, 136, 0.5); font-size: 1.1em;">${availableSlots.length} slot(s) available</div>
-                            <div style="max-height: 400px; overflow-y: auto; margin-bottom: 12px; padding-right: 5px; scrollbar-width: thin; scrollbar-color: rgba(0, 255, 255, 0.5) transparent;">
-                                ${slotsHtml}
-                            </div>
-                            ${screenshotLink}
-                            <a href="${pageLink}" target="_blank" class="detail-link" style="display: block; margin-top: 8px; color: #00ffff; text-decoration: none; font-weight: 600; padding: 10px; background: rgba(0, 255, 255, 0.15); border: 1px solid rgba(0, 255, 255, 0.4); border-radius: 6px; text-align: center; transition: all 0.3s ease;" onmouseover="this.style.background='rgba(0,255,255,0.25)'; this.style.boxShadow='0 0 10px rgba(0,255,255,0.5)'" onmouseout="this.style.background='rgba(0,255,255,0.15)'; this.style.boxShadow='none'">🔗 View All ${availableSlots.length} Slots on Booking Page</a>
-                        </div>
-                    `;
-                } else {
-                    // No available slots - show message and links
-                    detailsCell.innerHTML = `
-                        <div>
-                            <div style="margin-bottom: 8px; color: rgba(255, 255, 255, 0.6); font-weight: 500;">No available slots</div>
-                            ${screenshotLink}
-                            <a href="${pageLink}" target="_blank" class="detail-link" style="display: block; margin-top: 8px; color: #00ffff; text-decoration: none; font-weight: 600;">🔗 Booking Page</a>
-                        </div>
-                    `;
-                }
-            } else if (state.screenshot) {
-                // Has screenshot but no slots data yet
-                const pathParts = state.screenshot.replace(/\\/g, '/').split('/');
-                const filename = pathParts[pathParts.length - 1];
-                const detailLink = `/screenshots/${filename}`;
-                const pageLink = `https://reservation.frontdesksuite.ca/rcfs/cardelrec`;
-                detailsCell.innerHTML = `
-                    <div style="display: flex; flex-direction: column; gap: 5px;">
-                        <a href="${detailLink}" target="_blank" class="detail-link" style="color: #00ffff; text-decoration: none; font-weight: 600;">📄 View Details</a>
-                        <a href="${pageLink}" target="_blank" class="detail-link" style="color: #00ffff; text-decoration: none; font-weight: 600;">🔗 Booking Page</a>
-                    </div>
-                `;
-            } else {
-                detailsCell.innerHTML = '<span style="color: rgba(0, 255, 255, 0.5);">No details yet</span>';
-            }
-        }
-        
-        function renderTable() {
-            const tbody = document.getElementById('sportsTable');
-            tbody.innerHTML = sports.map(sport => `
-                <tr id="row-${sport.id}">
-                    <td class="sport-name">${sport.name}</td>
-                    <td>
-                        <input type="number" class="group-size-input" id="group-${sport.id}" min="1" max="10" value="2" ${!sport.groupSizeRequired ? 'disabled' : ''}>
-                    </td>
-                    <td>
-                        <div class="button-group">
-                            <button class="btn-start" onclick="startMonitoring('${sport.id}')" title="Start Monitoring">▶</button>
-                            <button class="btn-stop" onclick="stopMonitoring('${sport.id}')" disabled title="Stop Monitoring">⏹</button>
-                            <button class="btn-check" onclick="checkNow('${sport.id}')" title="Check Now">🔍</button>
-                        </div>
-                    </td>
-                    <td class="status-cell">
-                        <span class="status-indicator inactive"></span>
-                    </td>
-                    <td class="details-cell">
-                        <span style="color: #999;">No details yet</span>
-                    </td>
-                </tr>
-            `).join('');
-        }
-        
-        function startMonitoring(sportId) {
-            const groupSize = parseInt(document.getElementById(`group-${sportId}`).value) || 2;
-            
-            if (groupSize < 1 || groupSize > 10) {
-                showAlert('Group size must be between 1 and 10', 'error');
-                return;
-            }
-            
-            fetch('/api/start', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    activity_type: sportId,
-                    group_size: groupSize
-                })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    showAlert(`Monitoring started for ${sports.find(s => s.id === sportId).name}`, 'success');
-                    // Set last check time to now to start countdown
-                    lastCheckTimes[sportId] = Date.now();
-                    // Start countdown immediately
-                    if (!countdownTimers[sportId]) {
-                        startCountdown(sportId);
-                    }
-                    updateStatus();
-                } else {
-                    showAlert(data.message || 'Failed to start', 'error');
-                }
-            })
-            .catch(err => {
-                showAlert('Error: ' + err.message, 'error');
-            });
-        }
-        
-        function stopMonitoring(sportId) {
-            fetch('/api/stop', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ activity_type: sportId })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    showAlert(`Monitoring stopped for ${sports.find(s => s.id === sportId).name}`, 'info');
-                    updateStatus();
-                } else {
-                    showAlert(data.message || 'Failed to stop', 'error');
-                }
-            })
-            .catch(err => {
-                showAlert('Error: ' + err.message, 'error');
-            });
-        }
-        
-        function checkNow(sportId) {
-            // Prevent multiple simultaneous checks
-            if (checkingState[sportId]) {
-                return;
-            }
-            
-            const row = document.getElementById(`row-${sportId}`);
-            if (!row) {
-                showAlert('Error: Row not found', 'error');
-                return;
-            }
-            
-            const groupSizeInput = document.getElementById(`group-${sportId}`);
-            const groupSize = groupSizeInput ? (parseInt(groupSizeInput.value) || 2) : 2;
-            
-            if (groupSize < 1 || groupSize > 10) {
-                showAlert('Group size must be between 1 and 10', 'error');
-                return;
-            }
-            
-            const checkBtn = row.querySelector('.btn-check');
-            if (!checkBtn) {
-                showAlert('Error: Check button not found', 'error');
-                return;
-            }
-            
-            // Mark as checking and disable button
-            checkingState[sportId] = true;
-            checkBtn.disabled = true;
-            
-            // Single check - don't trigger status polling
-            fetch('/api/check-now', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    activity_type: sportId,
-                    group_size: groupSize
-                })
-            })
-            .then(res => res.json())
-            .then(data => {
-                // Always update state with check result (even if no slots found)
-                if (!monitoringState[sportId]) {
-                    monitoringState[sportId] = {};
-                }
-                // Update slots (empty array if none found)
-                monitoringState[sportId].slots = data.slots || [];
-                // Update screenshot if available (even on errors)
-                if (data.screenshot) {
-                    monitoringState[sportId].screenshot = data.screenshot;
-                }
-                // Always update the row to show latest check result (single update, no polling)
-                updateSportRow(sportId);
-                
-                if (data.success && data.slots && data.slots.length > 0) {
-                    showAlert(`Found ${data.slots.length} available slot(s)`, 'success');
-                } else if (!data.success) {
-                    // Show error message with details
-                    const errorMsg = data.message || 'Failed to check for slots';
-                    const errorType = data.error_type || 'unknown';
-                    showAlert(`${errorMsg} (${errorType})`, 'error');
-                } else {
-                    showAlert(data.message || 'No slots found', 'info');
-                }
-            })
-            .catch(err => {
-                showAlert('Error: ' + err.message, 'error');
-            })
-            .finally(() => {
-                // Always re-enable button and clear checking state
-                checkingState[sportId] = false;
-                checkBtn.disabled = false;
-            });
-        }
-        
-        // Initialize
-        renderTable();
-        updateStatus();
-        setInterval(updateStatus, 3000);
-    </script>
+      </div>
+    </section>
+  </div>
+
+  <div id="toastStack" class="toast-stack"></div>
+
+<script>
+let sports = [];
+let centers = [];
+const monitoring = {};
+
+function key(sportId, center){ return `${center}:${sportId}`; }
+
+function showToast(message, kind='info') {
+  const stack = document.getElementById('toastStack');
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${kind}`;
+  toast.textContent = message;
+  stack.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(8px)';
+    setTimeout(() => toast.remove(), 200);
+  }, 2600);
+}
+
+function statusPill(text, cls) {
+  return `<span class="status-pill ${cls}"><span class="dot"></span>${text}</span>`;
+}
+
+function updateKpis() {
+  document.getElementById('kpiSports').textContent = String(sports.length);
+  document.getElementById('kpiCenters').textContent = String(centers.length);
+  const active = Object.values(monitoring).filter(x => x && x.active).length;
+  document.getElementById('kpiActive').textContent = String(active);
+}
+
+function render() {
+  const tbody = document.getElementById('sportsTable');
+  tbody.innerHTML = sports.map(s => `
+    <tr id="row-${s.id}">
+      <td data-label="Sport">
+        <div class="sport-name">${s.name}</div>
+        <div class="sport-id">${s.id}</div>
+      </td>
+      <td data-label="Center">
+        <select id="center-${s.id}" class="select">${centers.map(c => `<option value="${c}">${c}</option>`).join('')}</select>
+      </td>
+      <td data-label="Group Size">
+        ${s.groupSizeRequired ? `<input id="group-${s.id}" class="number" type="number" min="1" max="10" value="2" />` : '<span class="muted">Not required</span>'}
+      </td>
+      <td data-label="Actions">
+        <div class="actions">
+          <button class="btn btn-success" onclick="startMonitoring('${s.id}')">Start</button>
+          <button class="btn btn-danger" onclick="stopMonitoring('${s.id}')">Stop</button>
+          <button class="btn btn-primary" onclick="checkNow('${s.id}')">Check Now</button>
+        </div>
+      </td>
+      <td data-label="Status" id="status-${s.id}">${statusPill('Idle', 'status-idle')}</td>
+      <td data-label="Latest Slots" id="details-${s.id}"><span class="muted">No data yet</span></td>
+    </tr>`).join('');
+  updateKpis();
+}
+
+async function logout() {
+  await fetch('/logout', { method: 'POST' });
+  window.location = '/login';
+}
+
+async function loadConfig() {
+  const res = await fetch('/api/config');
+  if (res.status === 401) { window.location = '/login'; return; }
+  const data = await res.json();
+  sports = data.sports || [];
+  centers = data.centers || ['cardelrec'];
+  document.getElementById('phoneNumbers').value = (data.telegram_phone_numbers || []).join(',');
+  document.getElementById('chatIds').value = (data.telegram_chat_ids || []).join(',');
+  render();
+}
+
+async function saveRecipients() {
+  const phoneNumbers = document.getElementById('phoneNumbers').value.split(',').map(s => s.trim()).filter(Boolean);
+  const chatIds = document.getElementById('chatIds').value.split(',').map(s => s.trim()).filter(Boolean);
+  const res = await fetch('/api/config', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({telegram_phone_numbers: phoneNumbers, telegram_chat_ids: chatIds})
+  });
+  if (!res.ok) {
+    showToast('Failed to save recipients', 'error');
+    return;
+  }
+  showToast('Recipients updated', 'success');
+}
+
+async function addSport() {
+  const id = document.getElementById('sportId').value.trim();
+  const name = document.getElementById('sportName').value.trim();
+  const groupSizeRequired = document.getElementById('sportGroup').checked;
+  const res = await fetch('/api/sports', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({id, name, groupSizeRequired})
+  });
+  const data = await res.json();
+  if (!data.success) {
+    showToast(data.message || 'Failed to add sport', 'error');
+    return;
+  }
+  sports = data.sports;
+  render();
+  showToast('Sport added successfully', 'success');
+}
+
+function selectedCenter(sportId){ return document.getElementById(`center-${sportId}`).value; }
+function selectedGroup(sportId){ const i=document.getElementById(`group-${sportId}`); return i ? parseInt(i.value || '2') : 2; }
+
+async function startMonitoring(sportId){
+  const center = selectedCenter(sportId);
+  const group_size = selectedGroup(sportId);
+  const res = await fetch('/api/start',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({activity_type:sportId, center, group_size})
+  });
+  const data = await res.json();
+  if(!data.success) { showToast(data.message || 'Start failed', 'error'); return; }
+  document.getElementById(`status-${sportId}`).innerHTML = statusPill(`Monitoring (${center})`, 'status-active');
+  showToast(`${sportId} monitoring started`, 'success');
+}
+
+async function stopMonitoring(sportId){
+  const center = selectedCenter(sportId);
+  const res = await fetch('/api/stop',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({activity_type:sportId, center})
+  });
+  const data = await res.json();
+  if(!data.success) { showToast(data.message || 'Stop failed', 'error'); return; }
+  document.getElementById(`status-${sportId}`).innerHTML = statusPill('Stopped', 'status-stop');
+  showToast(`${sportId} monitoring stopped`, 'info');
+}
+
+function renderSlots(slots) {
+  if (!slots || !slots.length) return '<span class="muted">No slots</span>';
+  return `<div class="slots">${slots.map(s => `<div class='slot'>${s.full_datetime || `${s.date||''} ${s.time||''}`}</div>`).join('')}</div>`;
+}
+
+async function checkNow(sportId){
+  const center = selectedCenter(sportId);
+  const group_size = selectedGroup(sportId);
+  const res = await fetch('/api/check-now',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({activity_type:sportId, center, group_size})
+  });
+  const data = await res.json();
+  const detail = document.getElementById(`details-${sportId}`);
+  if(!data.success) {
+    detail.innerHTML = `<span class="muted">${data.message || 'Failed to check'}</span>`;
+    showToast(data.message || 'Check failed', 'error');
+    return;
+  }
+  const slots = data.slots || [];
+  detail.innerHTML = renderSlots(slots);
+  showToast(slots.length ? `Found ${slots.length} slot(s)` : 'No slots right now', slots.length ? 'success' : 'info');
+}
+
+async function updateStatus(){
+  const res = await fetch('/api/status');
+  if(res.status !== 200) return;
+  const data = await res.json();
+  Object.entries(data.processes || {}).forEach(([k,p]) => { monitoring[k] = p; });
+  sports.forEach(s => {
+    const center = selectedCenter(s.id);
+    const st = monitoring[key(s.id, center)];
+    if(!st) return;
+    const statusCell = document.getElementById(`status-${s.id}`);
+    const detail = document.getElementById(`details-${s.id}`);
+    statusCell.innerHTML = st.active ? statusPill(`Monitoring (${center})`, 'status-active') : statusPill('Idle', 'status-idle');
+    if (st.slots) detail.innerHTML = renderSlots(st.slots);
+  });
+  updateKpis();
+}
+
+loadConfig();
+setInterval(updateStatus, 4000);
+</script>
 </body>
 </html>
