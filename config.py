@@ -8,8 +8,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Booking System Configuration
-BOOKING_BASE_URL = "https://reservation.frontdesksuite.ca/rcfs/cardelrec"
-BOOKING_CF_URL = "https://reservation-cf.frontdeskqms.ca/rcfs/cardelrec"
+DEFAULT_CENTER = os.environ.get('BOOKING_CENTER', 'cardelrec')
+
+
+def build_booking_url(center: str) -> str:
+    """Build booking URL for a center."""
+    return f"https://reservation.frontdesksuite.ca/rcfs/{center}"
+
+
+def build_booking_cf_url(center: str) -> str:
+    """Build CF booking URL for a center."""
+    return f"https://reservation-cf.frontdeskqms.ca/rcfs/{center}"
+
+
+BOOKING_BASE_URL = build_booking_url(DEFAULT_CENTER)
+BOOKING_CF_URL = build_booking_cf_url(DEFAULT_CENTER)
 
 # Activity Button IDs (extensible for other sports)
 # Note: As of 2024, racquet sports (Badminton, Pickleball) are now organized 
@@ -58,6 +71,7 @@ NAVIGATION_DELAY_MAX = float(os.environ.get('NAVIGATION_DELAY_MAX', '3.0'))
 # Telegram Configuration
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
+TELEGRAM_CHAT_IDS = [chat_id.strip() for chat_id in os.environ.get('TELEGRAM_CHAT_IDS', '').split(',') if chat_id.strip()]
 
 # Flask Configuration
 FLASK_SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
