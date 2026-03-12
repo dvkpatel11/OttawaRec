@@ -12,6 +12,7 @@ RUN mkdir -p screenshots
 EXPOSE 5000
 
 ENV FLASK_HOST=0.0.0.0 \
-    FLASK_PORT=5000
+    FLASK_PORT=5000 \
+    REGIONAL_USER_OWNED_BUCKET=
 
 CMD ["python", "app.py"]
