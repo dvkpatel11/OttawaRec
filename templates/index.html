@@ -1217,6 +1217,102 @@
         renderTable();
         updateStatus();
         setInterval(updateStatus, 3000);
+
+        // ── Telegram Chat ID Management ──────────────────────────────────────
+        function loadChatIds() {
+            fetch('/api/telegram/chat-ids')
+                .then(r => r.json())
+                .then(data => renderChatIds(data.chat_ids || [], data.telegram_enabled))
+                .catch(() => {});
+        }
+
+        function renderChatIds(ids, enabled) {
+            const statusEl = document.getElementById('tg-status');
+            const listEl   = document.getElementById('tg-id-list');
+
+            statusEl.textContent = enabled ? 'Bot connected' : 'Bot not configured';
+            statusEl.style.color = enabled ? '#00ff88' : '#ff0064';
+
+            listEl.innerHTML = '';
+            if (ids.length === 0) {
+                listEl.innerHTML = '<li style="color:#888;font-style:italic">No chat IDs configured</li>';
+                return;
+            }
+            ids.forEach(id => {
+                const li = document.createElement('li');
+                li.style.cssText = 'display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(0,255,255,0.1)';
+                li.innerHTML = `
+                    <span style="font-family:monospace;font-size:1.05em;flex:1">${id}</span>
+                    <button onclick="removeChatId('${id}')" style="background:rgba(255,0,100,0.15);color:#ff0064;border:1px solid #ff0064;padding:4px 12px;border-radius:4px;cursor:pointer;font-family:inherit">Remove</button>`;
+                listEl.appendChild(li);
+            });
+        }
+
+        function addChatId() {
+            const input = document.getElementById('tg-new-id');
+            const chatId = input.value.trim();
+            if (!chatId) { showAlert('Enter a chat ID', 'error'); return; }
+
+            fetch('/api/telegram/chat-ids', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: chatId })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    input.value = '';
+                    renderChatIds(data.chat_ids, true);
+                    showAlert('Chat ID added', 'success');
+                } else {
+                    showAlert(data.message || 'Failed to add', 'error');
+                }
+            })
+            .catch(e => showAlert('Error: ' + e.message, 'error'));
+        }
+
+        function removeChatId(chatId) {
+            fetch(`/api/telegram/chat-ids/${encodeURIComponent(chatId)}`, { method: 'DELETE' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        renderChatIds(data.chat_ids, true);
+                        showAlert('Chat ID removed', 'info');
+                    } else {
+                        showAlert(data.message || 'Failed to remove', 'error');
+                    }
+                })
+                .catch(e => showAlert('Error: ' + e.message, 'error'));
+        }
+
+        loadChatIds();
     </script>
+
+    <div style="max-width:700px;margin:32px auto 40px;background:rgba(0,255,255,0.05);border:1px solid rgba(0,255,255,0.2);border-radius:8px;padding:24px">
+        <h2 style="font-family:'Orbitron',sans-serif;font-size:1.1em;letter-spacing:2px;color:#00ffff;margin-bottom:16px">
+            TELEGRAM NOTIFICATIONS
+        </h2>
+        <p style="color:#888;font-size:0.9em;margin-bottom:4px">Bot status: <span id="tg-status" style="font-weight:600">Loading...</span></p>
+        <p style="color:#888;font-size:0.85em;margin-bottom:18px">Notifications are sent to all chat IDs below.</p>
+
+        <ul id="tg-id-list" style="list-style:none;margin-bottom:20px;min-height:32px"></ul>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <input id="tg-new-id" type="text" placeholder="Enter Telegram chat ID"
+                style="flex:1;min-width:200px;background:rgba(0,0,0,0.4);border:1px solid rgba(0,255,255,0.3);color:#00ffff;
+                       padding:10px 14px;border-radius:4px;font-family:'Rajdhani',sans-serif;font-size:1em;outline:none"
+                onkeydown="if(event.key==='Enter') addChatId()" />
+            <button onclick="addChatId()"
+                style="background:rgba(0,255,255,0.15);color:#00ffff;border:1px solid #00ffff;
+                       padding:10px 22px;border-radius:4px;cursor:pointer;font-family:'Orbitron',sans-serif;
+                       font-size:0.85em;letter-spacing:1px;white-space:nowrap">
+                ADD ID
+            </button>
+        </div>
+        <p style="color:#555;font-size:0.8em;margin-top:10px">
+            To find your chat ID, send a message to your bot then visit
+            <code style="color:#888">https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code>
+        </p>
+    </div>
 </body>
 </html>

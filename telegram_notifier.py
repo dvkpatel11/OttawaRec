@@ -15,8 +15,10 @@ class TelegramNotifier:
     def __init__(self, bot_token: Optional[str] = None, chat_id: Optional[str] = None):
         self.bot_token = bot_token or TELEGRAM_BOT_TOKEN
         self.chat_id = chat_id or TELEGRAM_CHAT_ID
+        # chat_ids is the full list used when sending; includes primary chat_id plus any extras
+        self.chat_ids: list = []
         self.enabled = bool(self.bot_token and self.chat_id)
-        
+
         if self.enabled:
             # Validate token format (should be numbers:letters format)
             if not self.bot_token or ':' not in self.bot_token:
@@ -28,6 +30,9 @@ class TelegramNotifier:
                 if not self._test_connection():
                     logger.error("Telegram bot token validation failed")
                     self.enabled = False
+
+        if self.enabled and self.chat_id:
+            self.chat_ids = [self.chat_id]
     
     def _test_connection(self) -> bool:
         """Test Telegram bot token by calling getMe"""
@@ -48,40 +53,58 @@ class TelegramNotifier:
             logger.error(f"Failed to test Telegram connection: {str(e)}")
             return False
     
+    def set_chat_ids(self, chat_ids: list) -> None:
+        """Replace the full list of chat IDs to send notifications to"""
+        self.chat_ids = [str(cid).strip() for cid in chat_ids if str(cid).strip()]
+
+    def add_chat_id(self, chat_id: str) -> bool:
+        """Add a chat ID to the notification list. Returns False if already present."""
+        chat_id = str(chat_id).strip()
+        if chat_id and chat_id not in self.chat_ids:
+            self.chat_ids.append(chat_id)
+            return True
+        return False
+
+    def remove_chat_id(self, chat_id: str) -> bool:
+        """Remove a chat ID from the notification list. Returns False if not found."""
+        chat_id = str(chat_id).strip()
+        if chat_id in self.chat_ids:
+            self.chat_ids.remove(chat_id)
+            return True
+        return False
+
     def send_message(self, message: str, parse_mode: str = "HTML") -> bool:
-        """Send a message to Telegram"""
+        """Send a message to all registered Telegram chat IDs"""
         if not self.enabled:
             return False
-        
-        try:
-            url = f"{self.base_url}/sendMessage"
-            data = {
-                'chat_id': self.chat_id,
-                'text': message,
-                'parse_mode': parse_mode
-            }
-            
-            response = requests.post(url, json=data, timeout=10)
-            
-            # Check response
-            if response.status_code == 200:
-                result = response.json()
-                if result.get('ok'):
-                    return True
+
+        targets = self.chat_ids if self.chat_ids else ([self.chat_id] if self.chat_id else [])
+        if not targets:
+            return False
+
+        success = False
+        url = f"{self.base_url}/sendMessage"
+        for cid in targets:
+            try:
+                data = {
+                    'chat_id': cid,
+                    'text': message,
+                    'parse_mode': parse_mode
+                }
+                response = requests.post(url, json=data, timeout=10)
+                if response.status_code == 200:
+                    result = response.json()
+                    if result.get('ok'):
+                        success = True
+                    else:
+                        logger.error(f"Telegram API error for {cid}: {result.get('description', 'Unknown error')}")
                 else:
-                    error_desc = result.get('description', 'Unknown error')
-                    logger.error(f"Telegram API error: {error_desc}")
-                    return False
-            else:
-                logger.error(f"Telegram API error: HTTP {response.status_code}")
-                return False
-                
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to send Telegram message: {str(e)}")
-            return False
-        except Exception as e:
-            logger.error(f"Unexpected error sending Telegram message: {str(e)}")
-            return False
+                    logger.error(f"Telegram API error for {cid}: HTTP {response.status_code}")
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Failed to send Telegram message to {cid}: {str(e)}")
+            except Exception as e:
+                logger.error(f"Unexpected error sending Telegram message to {cid}: {str(e)}")
+        return success
     
     def notify_slot_found(self, slots: list, activity_type: str = 'badminton-16+') -> bool:
         """Notify about found slots - shows all available slots"""

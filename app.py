@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_cors import CORS
 import os
+import json
 import logging
 from dotenv import load_dotenv
 from scraper import OttawaRecBookingScraper
@@ -8,6 +9,33 @@ from telegram_notifier import TelegramNotifier
 from config import FLASK_SECRET_KEY, FLASK_HOST, FLASK_PORT
 import threading
 import time
+
+CHAT_IDS_FILE = os.path.join(os.path.dirname(__file__), 'chat_ids.json')
+
+
+def load_chat_ids() -> list:
+    """Load chat IDs from persistent JSON file, seeding from env if file is new."""
+    from config import TELEGRAM_CHAT_ID
+    if os.path.exists(CHAT_IDS_FILE):
+        try:
+            with open(CHAT_IDS_FILE, 'r') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    # Seed from env var on first run
+    ids = [TELEGRAM_CHAT_ID] if TELEGRAM_CHAT_ID else []
+    save_chat_ids(ids)
+    return ids
+
+
+def save_chat_ids(ids: list) -> None:
+    """Persist chat IDs to JSON file."""
+    try:
+        with open(CHAT_IDS_FILE, 'w') as f:
+            json.dump(ids, f)
+    except Exception as e:
+        logger_bootstrap = logging.getLogger(__name__)
+        logger_bootstrap.error(f"Failed to save chat IDs: {e}")
 
 # Load environment variables from .env file
 load_dotenv()
@@ -40,6 +68,10 @@ logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
 # Initialize components
 telegram = TelegramNotifier()
+# Load persisted chat IDs and apply to notifier
+_stored_ids = load_chat_ids()
+if _stored_ids:
+    telegram.set_chat_ids(_stored_ids)
 
 # Global state - track multiple monitoring processes
 monitoring_processes = {}  # {activity_type: {'thread': thread, 'active': bool, 'group_size': int, 'result': dict, 'screenshot': str}}
@@ -512,6 +544,42 @@ def check_now():
         }), 500
 
 
+
+
+@app.route('/api/telegram/chat-ids', methods=['GET'])
+def get_chat_ids():
+    """Return current list of Telegram chat IDs"""
+    return jsonify({
+        'chat_ids': telegram.chat_ids,
+        'telegram_enabled': telegram.enabled
+    })
+
+
+@app.route('/api/telegram/chat-ids', methods=['POST'])
+def add_chat_id():
+    """Add a new Telegram chat ID"""
+    data = request.json or {}
+    chat_id = str(data.get('chat_id', '')).strip()
+    if not chat_id:
+        return jsonify({'success': False, 'message': 'chat_id is required'}), 400
+
+    added = telegram.add_chat_id(chat_id)
+    if not added:
+        return jsonify({'success': False, 'message': 'Chat ID already exists'}), 409
+
+    save_chat_ids(telegram.chat_ids)
+    return jsonify({'success': True, 'chat_ids': telegram.chat_ids})
+
+
+@app.route('/api/telegram/chat-ids/<chat_id>', methods=['DELETE'])
+def delete_chat_id(chat_id):
+    """Remove a Telegram chat ID"""
+    removed = telegram.remove_chat_id(chat_id)
+    if not removed:
+        return jsonify({'success': False, 'message': 'Chat ID not found'}), 404
+
+    save_chat_ids(telegram.chat_ids)
+    return jsonify({'success': True, 'chat_ids': telegram.chat_ids})
 
 
 if __name__ == '__main__':
