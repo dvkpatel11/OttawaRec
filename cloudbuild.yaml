@@ -7,3 +7,5 @@ steps:
       - .
 images:
   - gcr.io/ottawarec/ottawarec:latest
+options:
+  logging: NONE
