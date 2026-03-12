@@ -1,551 +1,370 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, session, redirect, url_for
 from flask_cors import CORS
 import os
 import logging
-from datetime import datetime
+from functools import wraps
 from dotenv import load_dotenv
 from scraper import OttawaRecBookingScraper
 from telegram_notifier import TelegramNotifier
-from config import FLASK_SECRET_KEY, FLASK_DEBUG, FLASK_HOST, FLASK_PORT, LOG_LEVEL
+from config import FLASK_SECRET_KEY, FLASK_HOST, FLASK_PORT
 import threading
 import time
 
-# Load environment variables from .env file
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = FLASK_SECRET_KEY
 
-# Enable CORS for all routes (needed for WSL/network access)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
-# Add headers to all responses
+
 @app.after_request
 def after_request(response):
-    """Add headers to all responses"""
     response.headers.add('Access-Control-Allow-Origin', '*')
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     response.headers.add('Access-Control-Allow-Credentials', 'true')
     return response
 
-# Configure logging - show errors and warnings with more detail
+
 logging.basicConfig(
-    level=logging.WARNING,  # Show WARNING and ERROR
+    level=logging.WARNING,
     format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-# Suppress werkzeug INFO logs for successful requests (only log errors)
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
-# Initialize components
+AUTH_USERNAME = 'admin'
+AUTH_PASSWORD = 'Adminx11!'
+VALID_CENTERS = ['cardelrec', 'richcraftkanata']
+
+runtime_config = {
+    'sports': [
+        {'id': 'badminton-16+', 'name': 'Badminton (16+)', 'groupSizeRequired': True},
+        {'id': 'badminton-family', 'name': 'Badminton (Family)', 'groupSizeRequired': False},
+        {'id': 'pickleball', 'name': 'Pickleball', 'groupSizeRequired': True}
+    ],
+    'telegram_chat_ids': [],
+    'telegram_phone_numbers': []
+}
+
 telegram = TelegramNotifier()
-
-# Global state - track multiple monitoring processes
-monitoring_processes = {}  # {activity_type: {'thread': thread, 'active': bool, 'group_size': int, 'result': dict, 'screenshot': str}}
-
-# Separate scraper instances per activity type to avoid session conflicts
-scrapers = {}  # {activity_type: OttawaRecBookingScraper instance}
-
-def get_scraper(activity_type: str = None):
-    """Get or create a scraper instance for an activity type"""
-    # For API routes that don't specify activity, use a default
-    if not activity_type:
-        activity_type = 'default'
-    
-    if activity_type not in scrapers:
-        scraper = OttawaRecBookingScraper()
-        scraper.clear_screenshots()
-        scrapers[activity_type] = scraper
-    
-    return scrapers[activity_type]
-
-# Initialize default scraper for backward compatibility
-scraper = get_scraper('default')
-
-# Session lock to prevent multiple simultaneous bookings
-import threading
+monitoring_processes = {}
+scrapers = {}
 session_lock = threading.Lock()
 
 
-def monitor_loop(activity_type: str = 'badminton-16+', group_size: int = 2):
-    """Background monitoring loop for a specific activity"""
-    global monitoring_processes
-    
-    # Get dedicated scraper instance for this activity type
-    scraper = get_scraper(activity_type)
-    
-    # Initialize session outside the lock to allow parallel monitoring
-    # The lock will be used for actual operations, not initialization
+def auth_required(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not session.get('authenticated'):
+            if request.path.startswith('/api/'):
+                return jsonify({'success': False, 'message': 'Authentication required'}), 401
+            return redirect(url_for('login'))
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def process_key(activity_type: str, center: str) -> str:
+    return f'{center}:{activity_type}'
+
+
+def get_scraper(activity_type: str = None, center: str = 'cardelrec'):
+    if not activity_type:
+        activity_type = 'default'
+    key = process_key(activity_type, center)
+    if key not in scrapers:
+        scraper = OttawaRecBookingScraper(center=center)
+        scraper.clear_screenshots()
+        scrapers[key] = scraper
+    return scrapers[key]
+
+
+def monitor_loop(activity_type: str = 'badminton-16+', center: str = 'cardelrec', group_size: int = 2):
+    key = process_key(activity_type, center)
+    scraper = get_scraper(activity_type, center)
+
     if not scraper.initialize_session():
-        logger.error(f"Failed to initialize scraper session for {activity_type}")
-        telegram.notify_error(f"Failed to initialize booking session for {activity_type}")
-        if activity_type in monitoring_processes:
-            monitoring_processes[activity_type]['active'] = False
+        logger.error(f"Failed to initialize scraper session for {key}")
+        telegram.notify_error(f"Failed to initialize booking session for {activity_type} at {center}")
+        if key in monitoring_processes:
+            monitoring_processes[key]['active'] = False
         return
-    
+
     check_count = 0
-    # Don't send app started message - too many notifications
-    while monitoring_processes.get(activity_type, {}).get('active', False):
+    while monitoring_processes.get(key, {}).get('active', False):
         try:
             check_count += 1
-            
-            # Use session lock for slot checking
             with session_lock:
-                # Re-initialize session if needed (session may have expired)
                 if not scraper.current_session_id:
                     if not scraper.initialize_session():
-                        logger.error(f"Failed to re-initialize session for {activity_type}")
-                        telegram.notify_error(f"Failed to re-initialize session for {activity_type}")
-                        monitoring_processes[activity_type]['last_error'] = {
+                        monitoring_processes[key]['last_error'] = {
                             'message': 'Failed to re-initialize session',
                             'error_type': 'session_error'
                         }
-                        # Wait before retrying
                         time.sleep(60)
                         continue
-                
-                # Get all available slots (with navigation)
+
                 result = scraper.get_available_slots(activity_type, group_size, navigate=True)
                 slots = result.get('slots', []) if result.get('success') else []
-                
-                # Update screenshot in process state
+
                 if result.get('screenshot'):
-                    monitoring_processes[activity_type]['screenshot'] = result['screenshot']
-                elif hasattr(scraper, 'screenshots') and activity_type in scraper.screenshots:
-                    monitoring_processes[activity_type]['screenshot'] = scraper.screenshots[activity_type]
-                
-                # Store error info if check failed
+                    monitoring_processes[key]['screenshot'] = result['screenshot']
+
                 if not result.get('success'):
-                    monitoring_processes[activity_type]['last_error'] = {
+                    monitoring_processes[key]['last_error'] = {
                         'message': result.get('message', 'Unknown error'),
                         'error_type': result.get('error_type', 'unknown_error'),
                         'status_code': result.get('status_code')
                     }
-                    # If it's a session/auth error, try to re-initialize next time
                     if result.get('error_type') in ['session_error', 'authentication_error']:
                         scraper.current_session_id = None
-                    
-                    # Update screenshot even on error (for debugging)
-                    if result.get('screenshot'):
-                        monitoring_processes[activity_type]['screenshot'] = result['screenshot']
-                    elif hasattr(scraper, 'screenshots') and activity_type in scraper.screenshots:
-                        monitoring_processes[activity_type]['screenshot'] = scraper.screenshots[activity_type]
-            
-            # Check previous slots BEFORE updating (to detect new slots)
-            previous_slots = monitoring_processes.get(activity_type, {}).get('slots', [])
+
+            previous_slots = monitoring_processes.get(key, {}).get('slots', [])
             previous_slot_count = len(previous_slots) if previous_slots else 0
-            
-            # Update slots in monitoring process state (for UI display)
-            monitoring_processes[activity_type]['slots'] = slots
-            
-            if slots:
-                # Notify when slots are found
-                # Send notification if:
-                # 1. First check (check_count == 1), OR
-                # 2. We didn't have slots before but now we do (previous_slot_count == 0 and len(slots) > 0), OR
-                # 3. We have more slots than before (new slots appeared)
-                should_notify = (
-                    check_count == 1 or 
-                    previous_slot_count == 0 or 
-                    len(slots) > previous_slot_count
-                )
-                
-                if should_notify:
-                    telegram.notify_slot_found(slots, activity_type)
-                # Don't auto-book - let user choose which slot to book via UI
-            # Don't notify for no slots - too many messages
-            
-            # Wait before next check (5 minutes = 300 seconds)
-            wait_seconds = 300
-            if monitoring_processes.get(activity_type, {}).get('active', False):
-                for _ in range(wait_seconds):
-                    if not monitoring_processes.get(activity_type, {}).get('active', False):
-                        break
-                    time.sleep(1)
-                    
+            monitoring_processes[key]['slots'] = slots
+
+            if slots and (check_count == 1 or previous_slot_count == 0 or len(slots) > previous_slot_count):
+                telegram.notify_slot_found(slots, activity_type, center=center)
+
+            for _ in range(300):
+                if not monitoring_processes.get(key, {}).get('active', False):
+                    break
+                time.sleep(1)
         except Exception as e:
-            import traceback
-            error_details = traceback.format_exc()
-            logger.error(f"Monitoring error for {activity_type}: {str(e)}\n{error_details}")
-            # Critical: notify on errors
-            telegram.notify_error(f"Monitoring error for {activity_type}: {str(e)}")
-            # Wait a bit before retrying
+            logger.error(f"Monitoring error for {key}: {str(e)}")
+            telegram.notify_error(f"Monitoring error for {activity_type} at {center}: {str(e)}")
             time.sleep(60)
-    
-    if activity_type in monitoring_processes:
-        monitoring_processes[activity_type]['active'] = False
+
+    if key in monitoring_processes:
+        monitoring_processes[key]['active'] = False
 
 
-@app.route('/', methods=['GET', 'OPTIONS'])
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        data = request.form or request.json or {}
+        username = data.get('username', '')
+        password = data.get('password', '')
+        if username == AUTH_USERNAME and password == AUTH_PASSWORD:
+            session['authenticated'] = True
+            return jsonify({'success': True, 'redirect': '/'}) if request.is_json else redirect(url_for('index'))
+        if request.is_json:
+            return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
+        return redirect(url_for('login', error=1))
+    return render_template('login.html')
+
+
+@app.route('/logout', methods=['POST'])
+@auth_required
+def logout():
+    session.clear()
+    return jsonify({'success': True})
+
+
+@app.route('/', methods=['GET'])
+@auth_required
 def index():
-    """Main page with table view"""
-    # Handle preflight OPTIONS request
-    if request.method == 'OPTIONS':
-        response = jsonify({})
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        response.headers.add('Access-Control-Allow-Headers', '*')
-        response.headers.add('Access-Control-Allow-Methods', '*')
-        return response, 200
-    
     return render_template('index.html')
 
 
+@app.route('/api/config', methods=['GET', 'POST'])
+@auth_required
+def api_config():
+    if request.method == 'GET':
+        return jsonify({
+            'success': True,
+            'sports': runtime_config['sports'],
+            'centers': VALID_CENTERS,
+            'telegram_phone_numbers': runtime_config['telegram_phone_numbers'],
+            'telegram_chat_ids': runtime_config['telegram_chat_ids']
+        })
+
+    data = request.json or {}
+    if 'telegram_phone_numbers' in data:
+        runtime_config['telegram_phone_numbers'] = [str(x).strip() for x in data.get('telegram_phone_numbers', []) if str(x).strip()]
+    if 'telegram_chat_ids' in data:
+        runtime_config['telegram_chat_ids'] = [str(x).strip() for x in data.get('telegram_chat_ids', []) if str(x).strip()]
+        telegram.set_recipients(runtime_config['telegram_chat_ids'], runtime_config['telegram_phone_numbers'])
+    return jsonify({'success': True, 'message': 'Configuration updated'})
+
+
+@app.route('/api/sports', methods=['POST'])
+@auth_required
+def add_sport():
+    data = request.json or {}
+    sport_id = (data.get('id') or '').strip()
+    name = (data.get('name') or '').strip()
+    group_required = bool(data.get('groupSizeRequired', True))
+
+    if not sport_id or not name:
+        return jsonify({'success': False, 'message': 'Sport id and name are required'}), 400
+
+    if any(s['id'] == sport_id for s in runtime_config['sports']):
+        return jsonify({'success': False, 'message': 'Sport id already exists'}), 400
+
+    runtime_config['sports'].append({'id': sport_id, 'name': name, 'groupSizeRequired': group_required})
+    return jsonify({'success': True, 'sports': runtime_config['sports']})
 
 
 @app.route('/api/start', methods=['POST'])
+@auth_required
 def start_monitoring():
-    """Start the monitoring and booking process for a specific activity"""
-    global monitoring_processes
-    
-    try:
-        data = request.json or {}
-        activity_type = data.get('activity_type', 'badminton-16+')
-        group_size = int(data.get('group_size', 2))
-        
-        # Validate group size
-        if group_size < 1 or group_size > 10:
-            return jsonify({
-                'success': False,
-                'message': 'Group size must be between 1 and 10'
-            }), 400
-        
-        # Check if already monitoring this activity
-        if activity_type in monitoring_processes and monitoring_processes[activity_type]['active']:
-            return jsonify({
-                'success': False,
-                'message': 'Monitoring is already active for this sport'
-            }), 400
-        
-        # Create new monitoring process
-        monitoring_processes[activity_type] = {
-            'active': True,
-            'group_size': group_size,
-            'result': None
-        }
-        
-        thread = threading.Thread(
-            target=monitor_loop,
-            args=(activity_type, group_size),
-            daemon=True
-        )
-        thread.start()
-        monitoring_processes[activity_type]['thread'] = thread
-        
-        return jsonify({
-            'success': True,
-            'message': 'Monitoring started successfully'
-        })
-    except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        logger.error(f"Failed to start monitoring: {str(e)}\n{error_details}")
-        activity_type = data.get('activity_type', 'badminton-16+')
-        if activity_type in monitoring_processes:
-            monitoring_processes[activity_type]['active'] = False
-        return jsonify({
-            'success': False,
-            'message': f'Failed to start: {str(e)}'
-        }), 500
+    data = request.json or {}
+    activity_type = data.get('activity_type', 'badminton-16+')
+    center = data.get('center', 'cardelrec')
+    group_size = int(data.get('group_size', 2))
+
+    if center not in VALID_CENTERS:
+        return jsonify({'success': False, 'message': 'Invalid center'}), 400
+    if group_size < 1 or group_size > 10:
+        return jsonify({'success': False, 'message': 'Group size must be between 1 and 10'}), 400
+
+    key = process_key(activity_type, center)
+    if key in monitoring_processes and monitoring_processes[key]['active']:
+        return jsonify({'success': False, 'message': 'Monitoring is already active for this sport and center'}), 400
+
+    monitoring_processes[key] = {'active': True, 'group_size': group_size, 'result': None, 'center': center, 'activity_type': activity_type}
+    thread = threading.Thread(target=monitor_loop, args=(activity_type, center, group_size), daemon=True)
+    thread.start()
+    monitoring_processes[key]['thread'] = thread
+    return jsonify({'success': True, 'message': 'Monitoring started successfully'})
 
 
 @app.route('/api/stop', methods=['POST'])
+@auth_required
 def stop_monitoring():
-    """Stop the monitoring process for a specific activity"""
-    global monitoring_processes
-    
-    try:
-        data = request.json or {}
-        activity_type = data.get('activity_type')
-        
-        if not activity_type:
-            return jsonify({
-                'success': False,
-                'message': 'Activity type is required'
-            }), 400
-        
-        if activity_type not in monitoring_processes or not monitoring_processes[activity_type]['active']:
-            return jsonify({
-                'success': False,
-                'message': 'Monitoring is not active for this sport'
-            }), 400
-        
-        monitoring_processes[activity_type]['active'] = False
-        
-        # Optionally clean up scraper instance when monitoring stops
-        # (Commented out to preserve session state in case user wants to check manually)
-        # if activity_type in scrapers:
-        #     del scrapers[activity_type]
-        
-        return jsonify({
-            'success': True,
-            'message': 'Monitoring stopped'
-        })
-    except Exception as e:
-        logger.error(f"Failed to stop monitoring: {str(e)}")
-        return jsonify({
-            'success': False,
-            'message': f'Failed to stop: {str(e)}'
-        }), 500
+    data = request.json or {}
+    activity_type = data.get('activity_type')
+    center = data.get('center', 'cardelrec')
+
+    if not activity_type:
+        return jsonify({'success': False, 'message': 'Activity type is required'}), 400
+
+    key = process_key(activity_type, center)
+    if key not in monitoring_processes or not monitoring_processes[key]['active']:
+        return jsonify({'success': False, 'message': 'Monitoring is not active for this sport/center'}), 400
+
+    monitoring_processes[key]['active'] = False
+    return jsonify({'success': True, 'message': 'Monitoring stopped'})
 
 
 @app.route('/api/status', methods=['GET'])
+@auth_required
 def status():
-    """Get current status for all processes"""
-    global monitoring_processes
-    
     processes = {}
-    last_check_times = {}
-    
-    for activity_type, process in monitoring_processes.items():
-        screenshot_path = None
-        scraper = scrapers.get(activity_type)
+    for key, process in monitoring_processes.items():
+        activity_type = process.get('activity_type')
+        center = process.get('center', 'cardelrec')
+        scraper = scrapers.get(key)
+        screenshot_path = process.get('screenshot')
+        last_check_time = None
+
         if scraper:
             if hasattr(scraper, 'screenshots') and activity_type in scraper.screenshots:
                 screenshot_path = scraper.screenshots[activity_type]
             if scraper.last_check_time:
-                last_check_times[activity_type] = scraper.last_check_time.isoformat()
-        elif 'screenshot' in process:
-            screenshot_path = process.get('screenshot')
-        
-        processes[activity_type] = {
+                last_check_time = scraper.last_check_time.isoformat()
+
+        processes[key] = {
             'active': process.get('active', False),
             'group_size': process.get('group_size', 2),
             'result': process.get('result'),
             'screenshot': screenshot_path,
-            'slots': process.get('slots', []),  # Include slots in status response
-            'last_error': process.get('last_error')  # Include last error if any
+            'slots': process.get('slots', []),
+            'last_error': process.get('last_error'),
+            'center': center,
+            'activity_type': activity_type,
+            'last_check': last_check_time
         }
-    
-    return jsonify({
-        'processes': processes,
-        'last_check': last_check_times,
-        'telegram_enabled': telegram.enabled
-    })
 
-
+    return jsonify({'processes': processes, 'telegram_enabled': telegram.enabled})
 
 
 @app.route('/screenshots/<filename>')
+@auth_required
 def serve_screenshot(filename):
-    """Serve screenshot files"""
     return send_from_directory('screenshots', filename)
 
 
 @app.route('/api/select-slot', methods=['POST'])
+@auth_required
 def select_slot():
-    """Select a time slot and get ContactInfo page fields"""
-    try:
-        data = request.json or {}
-        activity_type = data.get('activity_type')
-        slot_data = data.get('slot_data')
-        group_size = int(data.get('group_size', 2))
-        
-        # Validate required fields
-        if not activity_type or not slot_data:
-            return jsonify({
-                'success': False,
-                'message': 'Activity type and slot data are required',
-                'error_type': 'validation_error'
-            }), 400
-        
-        # Validate slot_data structure
-        required_slot_fields = ['queue_id', 'date_time', 'time_hash']
-        missing_fields = [field for field in required_slot_fields if field not in slot_data]
-        if missing_fields:
-            return jsonify({
-                'success': False,
-                'message': f'Missing required fields in slot data: {", ".join(missing_fields)}',
-                'error_type': 'validation_error',
-                'missing_fields': missing_fields
-            }), 400
-        
-        # Get dedicated scraper instance for this activity type
-        scraper = get_scraper(activity_type)
-        
-        # Use session lock to prevent multiple simultaneous operations
-        with session_lock:
-            # Initialize if needed
-            if not scraper.current_session_id:
-                if not scraper.initialize_session():
-                    return jsonify({
-                        'success': False,
-                        'message': 'Failed to initialize session',
-                        'error_type': 'session_error'
-                    }), 500
-            
-            # Get contact info fields
-            result = scraper.get_contact_info_fields(activity_type, slot_data, group_size)
-        
-        if result.get('success'):
-            return jsonify(result)
-        else:
-            status_code = 500
-            if result.get('error_type') == 'validation_error':
-                status_code = 400
-            elif result.get('error_type') == 'authentication_error':
-                status_code = 401
-            return jsonify(result), status_code
-    except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        logger.error(f"Error selecting slot: {str(e)}\n{error_details}")
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}',
-            'error_type': 'unknown_error'
-        }), 500
+    data = request.json or {}
+    activity_type = data.get('activity_type')
+    center = data.get('center', 'cardelrec')
+    slot_data = data.get('slot_data')
+    group_size = int(data.get('group_size', 2))
 
+    if not activity_type or not slot_data:
+        return jsonify({'success': False, 'message': 'Activity type and slot data are required', 'error_type': 'validation_error'}), 400
 
-# Removed duplicate route - /api/select-slot now handles this functionality with proper locking
+    scraper = get_scraper(activity_type, center)
+    with session_lock:
+        if not scraper.current_session_id and not scraper.initialize_session():
+            return jsonify({'success': False, 'message': 'Failed to initialize session', 'error_type': 'session_error'}), 500
+        result = scraper.get_contact_info_fields(activity_type, slot_data, group_size)
+
+    return jsonify(result), (200 if result.get('success') else 500)
 
 
 @app.route('/api/submit-contact', methods=['POST'])
+@auth_required
 def submit_contact():
-    """Submit contact information"""
-    try:
-        data = request.json or {}
-        activity_type = data.get('activity_type')
-        field_values = data.get('field_values', {})
-        
-        if not activity_type:
-            return jsonify({
-                'success': False,
-                'message': 'Activity type is required'
-            }), 400
-        
-        # Get dedicated scraper instance for this activity type
-        scraper = get_scraper(activity_type)
-        
-        # Use session lock to prevent multiple simultaneous operations
-        with session_lock:
-            # Submit contact info
-            result = scraper.submit_contact_info(activity_type, field_values)
-        
-        if result.get('success'):
-            return jsonify(result)
-        else:
-            status_code = 500
-            if result.get('error_type') == 'validation_error':
-                status_code = 400
-            elif result.get('error_type') == 'authentication_error':
-                status_code = 401
-            return jsonify(result), status_code
-    except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        logger.error(f"Error submitting contact info: {str(e)}\n{error_details}")
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}'
-        }), 500
+    data = request.json or {}
+    activity_type = data.get('activity_type')
+    center = data.get('center', 'cardelrec')
+    field_values = data.get('field_values', {})
+
+    if not activity_type:
+        return jsonify({'success': False, 'message': 'Activity type is required'}), 400
+
+    scraper = get_scraper(activity_type, center)
+    with session_lock:
+        result = scraper.submit_contact_info(activity_type, field_values)
+
+    return jsonify(result), (200 if result.get('success') else 500)
 
 
 @app.route('/api/check-now', methods=['POST'])
+@auth_required
 def check_now():
-    """Manually check for available slots right now"""
-    try:
-        data = request.json or {}
-        activity_type = data.get('activity_type', 'badminton-16+')
-        group_size = int(data.get('group_size', 2))
-        
-        # Get dedicated scraper instance for this activity type
-        scraper = get_scraper(activity_type)
-        
-        # Use session lock to prevent multiple simultaneous operations
-        with session_lock:
-            # Initialize if needed
-            if not scraper.current_session_id:
-                if not scraper.initialize_session():
-                    return jsonify({
-                        'success': False,
-                        'message': 'Failed to initialize session',
-                        'error_type': 'session_error'
-                    }), 500
-            
-            # Get all available slots (with navigation)
-            result = scraper.get_available_slots(activity_type, group_size, navigate=True)
-        
-        # Extract results
-        slots = result.get('slots', []) if result.get('success') else []
-        screenshot_path = result.get('screenshot')
-        
-        # Send Telegram notification if slots found (single check)
-        if slots:
-            telegram.notify_slot_found(slots, activity_type)
-        
-        # Update monitoring process if it exists
-        if activity_type in monitoring_processes:
-            if screenshot_path:
-                monitoring_processes[activity_type]['screenshot'] = screenshot_path
-        
-        # Return result with proper error handling
-        if result.get('success'):
-            return jsonify({
-                'success': True,
-                'slots': slots,
-                'screenshot': screenshot_path,
-                'message': result.get('message', f'Found {len(slots)} available slot(s)')
-            })
-        else:
-            # Return error with details
-            return jsonify({
-                'success': False,
-                'slots': [],
-                'screenshot': screenshot_path,
-                'message': result.get('message', 'Failed to check for slots'),
-                'error_type': result.get('error_type', 'unknown_error'),
-                'status_code': result.get('status_code'),
-                'error_details': result.get('error_details')
-            }), 500
-    except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        logger.error(f"Error in manual check: {str(e)}\n{error_details}")
-        return jsonify({
-            'success': False,
-            'slots': [],
-            'screenshot': None,
-            'message': f'Error: {str(e)}',
-            'error_type': 'unknown_error',
-            'error_details': str(e)
-        }), 500
+    data = request.json or {}
+    activity_type = data.get('activity_type', 'badminton-16+')
+    center = data.get('center', 'cardelrec')
+    group_size = int(data.get('group_size', 2))
 
+    scraper = get_scraper(activity_type, center)
+    with session_lock:
+        if not scraper.current_session_id and not scraper.initialize_session():
+            return jsonify({'success': False, 'message': 'Failed to initialize session', 'error_type': 'session_error'}), 500
+        result = scraper.get_available_slots(activity_type, group_size, navigate=True)
 
+    slots = result.get('slots', []) if result.get('success') else []
+    screenshot_path = result.get('screenshot')
+    if slots:
+        telegram.notify_slot_found(slots, activity_type, center=center)
+
+    key = process_key(activity_type, center)
+    if key not in monitoring_processes:
+        monitoring_processes[key] = {'active': False, 'activity_type': activity_type, 'center': center}
+    if screenshot_path:
+        monitoring_processes[key]['screenshot'] = screenshot_path
+    monitoring_processes[key]['slots'] = slots
+
+    if result.get('success'):
+        return jsonify({'success': True, 'slots': slots, 'screenshot': screenshot_path, 'message': result.get('message', f'Found {len(slots)} slot(s)')})
+
+    return jsonify({
+        'success': False,
+        'slots': [],
+        'screenshot': screenshot_path,
+        'message': result.get('message', 'Failed to check for slots'),
+        'error_type': result.get('error_type', 'unknown_error')
+    }), 500
 
 
 if __name__ == '__main__':
-    try:
-        import socket
-        # Get WSL IP address
-        hostname = socket.gethostname()
-        try:
-            wsl_ip = socket.gethostbyname(hostname)
-        except:
-            wsl_ip = FLASK_HOST
-        
-        print("=" * 60)
-        print("Ottawa Rec Booking App")
-        print("=" * 60)
-        print(f"Server running on:")
-        print(f"  http://{wsl_ip}:{FLASK_PORT}")
-        print(f"  http://localhost:{FLASK_PORT}")
-        print("=" * 60)
-        print("\nPress Ctrl+C to stop the server\n")
-        
-        # Use PORT environment variable if available (for platforms like Railway, Render, etc.)
-        port = int(os.environ.get('PORT', FLASK_PORT))
-        app.run(debug=False, host=FLASK_HOST, port=port, use_reloader=False)
-    except OSError as e:
-        if "Address already in use" in str(e) or "address is already in use" in str(e).lower():
-            logger.error(f"Port {FLASK_PORT} is already in use")
-            print(f"\nERROR: Port {FLASK_PORT} is already in use!")
-            print(f"Either stop the other process or change FLASK_PORT in your .env file")
-        else:
-            logger.error(f"Failed to start server: {str(e)}")
-            print(f"\nERROR: Failed to start server: {e}")
-    except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        print(f"\nERROR: {e}")
-
+    port = int(os.environ.get('PORT', FLASK_PORT))
+    app.run(debug=False, host=FLASK_HOST, port=port, use_reloader=False)

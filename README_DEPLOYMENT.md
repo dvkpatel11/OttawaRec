@@ -78,3 +78,18 @@ CONTACT_PHONE=1234567890
 - **Screenshots**: The `screenshots/` directory will be created automatically
 - **Session Management**: Each deployment gets its own session state
 
+
+
+## GitHub Pages Hosting
+
+A GitHub Pages workflow is included at `.github/workflows/deploy-pages.yml` and publishes the `docs/` directory.
+
+Important:
+- GitHub Pages can only host static files (HTML/CSS/JS).
+- Your Flask backend (`app.py`) must be hosted separately (Render/Railway/Fly/VM).
+- Set `window.API_BASE_URL` in `docs/config.js` to your backend URL.
+
+After pushing:
+1. In GitHub repo settings, enable **Pages** with **GitHub Actions** as source.
+2. Push changes to your deployment branch (configured for `main`, `master`, or `work`).
+3. Open the Pages site and use `app.html` to access your backend login/UI.

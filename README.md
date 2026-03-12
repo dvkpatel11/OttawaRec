@@ -195,3 +195,14 @@ ACTIVITY_BUTTON_IDS = {
 
 This project is for personal use only. Please respect the booking system's terms of service.
 
+
+## Production Readiness Notes
+
+Current version now includes:
+- A required login page using hardcoded credentials (`admin` / `Adminx11!`).
+- Runtime UI configuration for Telegram recipients (phone numbers + chat IDs).
+- Runtime sport management (add sports from UI).
+- Center selection (`cardelrec` and `richcraftkanata`) for checks and monitoring.
+- Responsive UI improvements for mobile and desktop views.
+
+Before true production deployment, replace hardcoded auth with a proper identity provider and secure secret storage.
