@@ -2,11 +2,10 @@ from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_cors import CORS
 import os
 import logging
-from datetime import datetime
 from dotenv import load_dotenv
 from scraper import OttawaRecBookingScraper
 from telegram_notifier import TelegramNotifier
-from config import FLASK_SECRET_KEY, FLASK_DEBUG, FLASK_HOST, FLASK_PORT, LOG_LEVEL
+from config import FLASK_SECRET_KEY, FLASK_HOST, FLASK_PORT
 import threading
 import time
 
