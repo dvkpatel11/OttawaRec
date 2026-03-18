@@ -1,12 +1,42 @@
 steps:
+  # Build the Docker image
   - name: gcr.io/cloud-builders/docker
     args:
       - build
       - -t
-      - gcr.io/ottawarec/ottawarec:latest
+      - gcr.io/$PROJECT_ID/ottawa-rec-scraper:$COMMIT_SHA
+      - -t
+      - gcr.io/$PROJECT_ID/ottawa-rec-scraper:latest
       - .
+
+  # Push both tags
+  - name: gcr.io/cloud-builders/docker
+    args: [push, gcr.io/$PROJECT_ID/ottawa-rec-scraper:$COMMIT_SHA]
+
+  - name: gcr.io/cloud-builders/docker
+    args: [push, gcr.io/$PROJECT_ID/ottawa-rec-scraper:latest]
+
+  # Deploy to Cloud Run
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ottawa-rec-scraper
+      - --image=gcr.io/$PROJECT_ID/ottawa-rec-scraper:$COMMIT_SHA
+      - --region=us-central1
+      - --platform=managed
+      - --port=5000
+      - --memory=512Mi
+      - --min-instances=1
+      - --max-instances=3
+      - --allow-unauthenticated
+      - --set-env-vars=FLASK_HOST=0.0.0.0,FLASK_PORT=5000
+      - --quiet
+
 images:
-  - gcr.io/ottawarec/ottawarec:latest
+  - gcr.io/$PROJECT_ID/ottawa-rec-scraper:$COMMIT_SHA
+  - gcr.io/$PROJECT_ID/ottawa-rec-scraper:latest
+
 options:
-  logging: GCS_ONLY
-  defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
+  logging: CLOUD_LOGGING_ONLY

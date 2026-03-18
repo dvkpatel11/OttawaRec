@@ -73,6 +73,25 @@ class TelegramNotifier:
             return True
         return False
 
+    def send_to(self, chat_id: str, message: str, parse_mode: str = "HTML") -> bool:
+        """Send a message to a single specific chat ID"""
+        if not self.enabled:
+            return False
+        try:
+            response = requests.post(
+                f"{self.base_url}/sendMessage",
+                json={"chat_id": chat_id, "text": message, "parse_mode": parse_mode},
+                timeout=10,
+            )
+            result = response.json()
+            if not result.get("ok"):
+                logger.error(f"Telegram send_to {chat_id} failed: {result.get('description')}")
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send Telegram message to {chat_id}: {e}")
+            return False
+
     def send_message(self, message: str, parse_mode: str = "HTML") -> bool:
         """Send a message to all registered Telegram chat IDs"""
         if not self.enabled:

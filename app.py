@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 from scraper import OttawaRecBookingScraper
 from telegram_notifier import TelegramNotifier
 from config import FLASK_SECRET_KEY, FLASK_HOST, FLASK_PORT
+import config as _config
+import scraper as _scraper_module
 import threading
 import time
 
@@ -352,10 +354,67 @@ def status():
     return jsonify({
         'processes': processes,
         'last_check': last_check_times,
-        'telegram_enabled': telegram.enabled
+        'telegram_enabled': telegram.enabled,
+        'booking_url': _config.BOOKING_BASE_URL,
+        'active_center': _config.ACTIVE_CENTER,
     })
 
 
+
+
+@app.route('/api/centers', methods=['GET'])
+def get_centers():
+    """Return all available centers and the currently active one"""
+    return jsonify({
+        'centers': _config.RECREATION_CENTERS,
+        'active_center': _config.ACTIVE_CENTER,
+        'booking_url': _config.BOOKING_BASE_URL,
+    })
+
+
+@app.route('/api/set-center', methods=['POST'])
+def set_center():
+    """Switch the active recreation center at runtime"""
+    data = request.json or {}
+    center_id = data.get('center_id')
+
+    if center_id not in _config.RECREATION_CENTERS:
+        return jsonify({'success': False, 'message': f'Unknown center: {center_id}'}), 400
+
+    # Stop all active monitoring and clear scraper instances
+    for activity_type in list(monitoring_processes.keys()):
+        monitoring_processes[activity_type]['active'] = False
+    monitoring_processes.clear()
+    scrapers.clear()
+
+    # Update config globals
+    center = _config.RECREATION_CENTERS[center_id]
+    slug = center['slug']
+    activities = center.get('activities', {})
+
+    _config.ACTIVE_CENTER = center_id
+    _config.ACTIVE_CENTER_SLUG = slug
+    _config.BOOKING_BASE_URL = f"https://reservation.frontdesksuite.ca/rcfs/{slug}"
+    _config.BOOKING_CF_URL = f"https://reservation-cf.frontdeskqms.ca/rcfs/{slug}"
+    _config.PAGE_ID = center.get('page_id') or _config.PAGE_ID
+    _config.ACTIVITY_BUTTON_IDS = {a: v['button_id'] for a, v in activities.items()}
+    _config.ACTIVITY_DISPLAY_NAMES = {a: v['display_name'] for a, v in activities.items()}
+    _config.ACTIVITY_GROUP_SIZE_REQUIRED = {a: v['group_size_required'] for a, v in activities.items()}
+    _config.ACTIVITY_MATCH_PATTERNS = {a: v['match_patterns'] for a, v in activities.items()}
+
+    # Propagate to scraper module (imported these names at startup)
+    _scraper_module.BOOKING_BASE_URL = _config.BOOKING_BASE_URL
+    _scraper_module.BOOKING_CF_URL = _config.BOOKING_CF_URL
+    _scraper_module.ACTIVE_CENTER_SLUG = slug
+    _scraper_module.ACTIVITY_MATCH_PATTERNS = _config.ACTIVITY_MATCH_PATTERNS
+    _scraper_module.ACTIVITY_BUTTON_IDS = _config.ACTIVITY_BUTTON_IDS
+    _scraper_module.PAGE_ID = _config.PAGE_ID
+
+    return jsonify({
+        'success': True,
+        'center': center,
+        'booking_url': _config.BOOKING_BASE_URL,
+    })
 
 
 @app.route('/screenshots/<filename>')
@@ -580,6 +639,78 @@ def delete_chat_id(chat_id):
 
     save_chat_ids(telegram.chat_ids)
     return jsonify({'success': True, 'chat_ids': telegram.chat_ids})
+
+
+@app.route('/telegram/webhook', methods=['POST'])
+def telegram_webhook():
+    """Receive incoming Telegram updates via webhook.
+    When anyone messages the bot they are auto-registered for notifications.
+    """
+    update = request.get_json(silent=True) or {}
+
+    message = update.get('message') or update.get('edited_message')
+    if not message:
+        return '', 200  # ignore non-message updates (inline queries, etc.)
+
+    chat = message.get('chat', {})
+    chat_id = str(chat.get('id', ''))
+    if not chat_id:
+        return '', 200
+
+    text = (message.get('text') or '').strip().lower()
+    first_name = chat.get('first_name') or 'there'
+
+    if text == '/stop':
+        removed = telegram.remove_chat_id(chat_id)
+        if removed:
+            save_chat_ids(telegram.chat_ids)
+            telegram.send_to(chat_id,
+                "✅ You've been removed from the Ottawa Rec notification list.\n"
+                "Send any message to re-subscribe."
+            )
+    else:
+        added = telegram.add_chat_id(chat_id)
+        if added:
+            save_chat_ids(telegram.chat_ids)
+            from config import RECREATION_CENTERS, ACTIVE_CENTER
+            center_name = RECREATION_CENTERS[ACTIVE_CENTER]['name']
+            telegram.send_to(chat_id,
+                f"👋 Hi {first_name}! You're now subscribed to <b>Ottawa Rec Booking</b> alerts.\n\n"
+                f"📍 Currently watching: <b>{center_name}</b>\n\n"
+                f"You'll get a message as soon as a badminton or pickleball slot opens up.\n\n"
+                f"Send /stop at any time to unsubscribe."
+            )
+        # If already registered, silently ignore (no spam)
+
+    return '', 200
+
+
+@app.route('/api/telegram/setup-webhook', methods=['POST'])
+def setup_webhook():
+    """Register this app's URL as the Telegram webhook.
+    Call this once after deploying with body: {"base_url": "https://your-app.run.app"}
+    """
+    if not telegram.enabled:
+        return jsonify({'success': False, 'message': 'Telegram bot not configured'}), 400
+
+    data = request.get_json(silent=True) or {}
+    base_url = data.get('base_url', '').rstrip('/')
+    if not base_url:
+        return jsonify({'success': False, 'message': 'base_url is required'}), 400
+
+    webhook_url = f"{base_url}/telegram/webhook"
+    try:
+        resp = requests.post(
+            f"https://api.telegram.org/bot{telegram.bot_token}/setWebhook",
+            json={"url": webhook_url, "allowed_updates": ["message"]},
+            timeout=10,
+        )
+        result = resp.json()
+        if result.get('ok'):
+            return jsonify({'success': True, 'webhook_url': webhook_url})
+        return jsonify({'success': False, 'message': result.get('description', 'Unknown error')}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 if __name__ == '__main__':

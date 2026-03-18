@@ -1,0 +1,60 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: # allow manual trigger from GitHub UI
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  SERVICE:    ottawa-rec-scraper
+  REGION:     us-central1
+  IMAGE:      gcr.io/${{ secrets.GCP_PROJECT_ID }}/ottawa-rec-scraper
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker --quiet
+
+      - name: Build image
+        run: docker build -t $IMAGE:${{ github.sha }} -t $IMAGE:latest .
+
+      - name: Push image
+        run: |
+          docker push $IMAGE:${{ github.sha }}
+          docker push $IMAGE:latest
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy $SERVICE \
+            --image      $IMAGE:${{ github.sha }} \
+            --region     $REGION \
+            --platform   managed \
+            --port       5000 \
+            --memory     512Mi \
+            --min-instances 1 \
+            --max-instances 3 \
+            --allow-unauthenticated \
+            --set-env-vars "FLASK_HOST=0.0.0.0,FLASK_PORT=5000" \
+            --quiet
+
+      - name: Print service URL
+        run: |
+          gcloud run services describe $SERVICE \
+            --region $REGION \
+            --format "value(status.url)"

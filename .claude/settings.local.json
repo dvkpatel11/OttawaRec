@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -h \"^import\\\\|^from\" /c/Users/deepv/Desktop/Projects/OttawaRecScraper/*.py)",
+      "Bash(grep -r \"import\\\\|from\" /c/Users/deepv/Desktop/Projects/OttawaRecScraper/*.py)",
+      "Bash(grep -r \"chat_ids.json\\\\|CHAT_IDS_FILE\" /c/Users/deepv/Desktop/Projects/OttawaRecScraper/*.py)",
+      "WebFetch(domain:reservation.frontdesksuite.ca)",
+      "WebFetch(domain:reservation-cf.frontdeskqms.ca)"
+    ]
+  }
+}

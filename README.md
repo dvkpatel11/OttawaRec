@@ -1,6 +1,6 @@
 # Ottawa Recreation Booking Scraper
 
-Automated booking system for Ottawa recreation facilities, specifically for badminton court reservations at CARDELREC Recreation Complex Goulbourn.
+Automated booking system for Ottawa recreation facilities, specifically for badminton court reservations at richcraftkanata Recreation Complex Goulbourn.
 
 ## Features
 
@@ -83,6 +83,7 @@ python run.py
 The app will be available at `http://localhost:5000` (or the port specified in your `.env` file)
 
 **Troubleshooting:**
+
 - If you get "Address already in use", change `FLASK_PORT` in your `.env` file
 - If you get 401 errors, make sure the app is actually running (check the console output)
 - Make sure no firewall or antivirus is blocking the connection
@@ -151,10 +152,12 @@ Edit `config.py` to customize:
 ## Important Notes
 
 ⚠️ **The booking system only allows one reservation at a time per user.**
+
 - The scraper uses a single session to respect this limitation
 - Do not run multiple instances simultaneously
 
 ⚠️ **Booking may require login**
+
 - The system may redirect to a login page after selecting a time slot
 - You may need to complete the booking manually if authentication is required
 
@@ -194,4 +197,3 @@ ACTIVITY_BUTTON_IDS = {
 ## License
 
 This project is for personal use only. Please respect the booking system's terms of service.
-
