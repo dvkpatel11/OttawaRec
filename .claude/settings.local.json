@@ -21,7 +21,11 @@
       "Bash(python -c \"import app\")",
       "Bash(timeout /t 3 /nobreak)",
       "Bash(curl -s http://localhost:5000/api/status)",
-      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(''''centers:'''', list\\(d.get\\(''''centers'''',{}\\).keys\\(\\)\\)\\); print\\(''''processes:'''', list\\(d.get\\(''''processes'''',{}\\).keys\\(\\)\\)\\)\")"
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(''''centers:'''', list\\(d.get\\(''''centers'''',{}\\).keys\\(\\)\\)\\); print\\(''''processes:'''', list\\(d.get\\(''''processes'''',{}\\).keys\\(\\)\\)\\)\")",
+      "WebFetch(domain:ottawarec-866404342599.northamerica-northeast1.run.app)",
+      "Bash(curl -s \"https://ottawarec-866404342599.northamerica-northeast1.run.app/screenshots/step4_badminton-16plus_final_slots_20260319_170921.html\")",
+      "Bash(pkill -f \"python app.py\")",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(''''centers:'''', list\\(d.get\\(''''centers'''',{}\\).keys\\(\\)\\)\\)\")"
     ]
   }
 }

@@ -17,11 +17,10 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from config import (
-    BOOKING_BASE_URL,
-    BOOKING_CF_URL,
-    ACTIVE_CENTER_SLUG,
-    ACTIVITY_BUTTON_IDS,
-    ACTIVITY_MATCH_PATTERNS,
+    BOOKING_BASE_URL,   # used only as __init__ default; overridden per-instance
+    BOOKING_CF_URL,     # used only as __init__ default; overridden per-instance
+    ACTIVE_CENTER_SLUG, # fallback for redirect slug extraction only
+    ACTIVITY_MATCH_PATTERNS,  # used only as __init__ default; overridden per-instance
     PAGE_ID,
     DEFAULT_GROUP_SIZE,
     DEFAULT_CULTURE,
@@ -229,7 +228,7 @@ class OttawaRecBookingScraper:
                 if link_info["href"].startswith("http"):
                     link_info["full_url"] = link_info["href"]
                 elif link_info["href"].startswith("/"):
-                    link_info["full_url"] = f"{BOOKING_CF_URL}{link_info['href']}"
+                    link_info["full_url"] = f"{self.booking_cf_url}{link_info['href']}"
             structure["links"].append(link_info)
 
         # Extract forms
@@ -259,7 +258,7 @@ class OttawaRecBookingScraper:
         """Initialize session with booking system"""
         try:
             response = self.session.get(
-                BOOKING_BASE_URL, timeout=REQUEST_TIMEOUT, allow_redirects=True
+                self.booking_base_url, timeout=REQUEST_TIMEOUT, allow_redirects=True
             )
 
             # Check for authentication errors in response
@@ -326,29 +325,29 @@ class OttawaRecBookingScraper:
                 )
                 # Compare with config and warn if different
                 for activity_type, extracted_id in extracted_buttons.items():
-                    config_id = ACTIVITY_BUTTON_IDS.get(activity_type)
+                    config_id = self.activity_button_ids.get(activity_type)
                     if config_id and extracted_id != config_id:
                         logger.warning(
                             f"Button ID mismatch for {activity_type}: config has {config_id}, page has {extracted_id} (using page value)"
                         )
             else:
                 logger.warning(
-                    "Could not extract activity buttons from initial page, using config values"
+                    "Could not extract activity buttons from initial page, using center-specific config values"
                 )
-                # Fall back to config values
-                self.activity_button_ids = ACTIVITY_BUTTON_IDS.copy()
+                # activity_button_ids already set from center-specific config — keep existing values
 
-            # 3. Extract base URLs from page if they differ (for future use)
-            # The URLs are typically consistent, but we store the actual page URL
-            if response.url and response.url != BOOKING_BASE_URL:
-                # If redirected, update base URL
+            # 3. Extract base URLs from page if they differ (e.g. domain redirect)
+            # Use slug from our own configured URL so we stay on the right center.
+            if response.url and response.url != self.booking_base_url:
                 base_match = re.search(r"(https?://[^/]+)", response.url)
                 if base_match:
                     base = base_match.group(1)
+                    slug_match = re.search(r"/rcfs/([^/?#]+)", self.booking_base_url)
+                    center_slug = slug_match.group(1) if slug_match else ACTIVE_CENTER_SLUG
                     if "frontdesksuite" in base:
-                        self.booking_base_url = base + f"/rcfs/{ACTIVE_CENTER_SLUG}"
+                        self.booking_base_url = base + f"/rcfs/{center_slug}"
                     elif "frontdeskqms" in base:
-                        self.booking_cf_url = base + f"/rcfs/{ACTIVE_CENTER_SLUG}"
+                        self.booking_cf_url = base + f"/rcfs/{center_slug}"
 
             # Log session initialization details
             logger.info(
@@ -510,7 +509,7 @@ class OttawaRecBookingScraper:
             # Get button ID from cache (extracted at startup) or fall back to config
             button_id = self.activity_button_ids.get(
                 activity_type
-            ) or ACTIVITY_BUTTON_IDS.get(activity_type)
+            ) or self.activity_button_ids.get(activity_type)
 
             if not button_id:
                 logger.error(f"No button ID found for activity: {activity_type}")
@@ -522,7 +521,7 @@ class OttawaRecBookingScraper:
                 return False
 
             # Navigate to StartReservation (this establishes flow state and redirects)
-            url = f"{BOOKING_CF_URL}/ReserveTime/StartReservation"
+            url = f"{self.booking_cf_url}/ReserveTime/StartReservation"
             params = {
                 "pageId": self.current_page_id,
                 "buttonId": button_id,
@@ -611,7 +610,7 @@ class OttawaRecBookingScraper:
             # Use cached button ID or fall back to config
             button_id = self.activity_button_ids.get(
                 activity_type
-            ) or ACTIVITY_BUTTON_IDS.get(activity_type)
+            ) or self.activity_button_ids.get(activity_type)
             if not button_id:
                 logger.error(f"Unknown activity type: {activity_type}")
                 return False
@@ -640,7 +639,7 @@ class OttawaRecBookingScraper:
                 return True
             else:
                 # Try to navigate to SlotCountSelection (simplified - just construct URL)
-                url = f"{BOOKING_CF_URL}/ReserveTime/SlotCountSelection"
+                url = f"{self.booking_cf_url}/ReserveTime/SlotCountSelection"
                 params = {
                     "pageId": self.current_page_id,
                     "buttonId": button_id,
@@ -690,7 +689,7 @@ class OttawaRecBookingScraper:
                     self.last_activity_url
                     and "SlotCountSelection" in self.last_activity_url
                 )
-                else f"{BOOKING_CF_URL}/ReserveTime/SlotCountSelection"
+                else f"{self.booking_cf_url}/ReserveTime/SlotCountSelection"
             )
 
             logger.info(f"Submitting group size form to: {post_url}")
@@ -754,7 +753,7 @@ class OttawaRecBookingScraper:
             # Use cached button ID from startup or fall back to config
             button_id = self.activity_button_ids.get(
                 activity_type
-            ) or ACTIVITY_BUTTON_IDS.get(activity_type)
+            ) or self.activity_button_ids.get(activity_type)
             if not button_id:
                 return {
                     "success": False,
@@ -823,7 +822,7 @@ class OttawaRecBookingScraper:
                 )
             else:
                 # Construct TimeSelection URL (simplified - use cached button ID)
-                url = f"{BOOKING_CF_URL}/ReserveTime/TimeSelection"
+                url = f"{self.booking_cf_url}/ReserveTime/TimeSelection"
                 params = {
                     "culture": DEFAULT_CULTURE,
                     "pageId": self.current_page_id,
@@ -1188,7 +1187,7 @@ class OttawaRecBookingScraper:
             # Use cached button ID from startup or fall back to config
             button_id = self.activity_button_ids.get(
                 activity_type
-            ) or ACTIVITY_BUTTON_IDS.get(activity_type)
+            ) or self.activity_button_ids.get(activity_type)
             if not button_id:
                 return {
                     "success": False,
@@ -1196,7 +1195,7 @@ class OttawaRecBookingScraper:
                 }
 
             # Get the time selection page to get CSRF token
-            url = f"{BOOKING_CF_URL}/ReserveTime/TimeSelection"
+            url = f"{self.booking_cf_url}/ReserveTime/TimeSelection"
             params = {
                 "culture": DEFAULT_CULTURE,
                 "pageId": self.current_page_id,
@@ -1227,7 +1226,7 @@ class OttawaRecBookingScraper:
             }
 
             response = self.session.post(
-                f"{BOOKING_CF_URL}/ReserveTime/SubmitTimeSelection",
+                f"{self.booking_cf_url}/ReserveTime/SubmitTimeSelection",
                 data=form_data,
                 params={"culture": DEFAULT_CULTURE},
                 timeout=REQUEST_TIMEOUT,
@@ -1357,7 +1356,7 @@ class OttawaRecBookingScraper:
             # Use cached button ID from startup or fall back to config
             button_id = self.activity_button_ids.get(
                 activity_type
-            ) or ACTIVITY_BUTTON_IDS.get(activity_type)
+            ) or self.activity_button_ids.get(activity_type)
             if not button_id:
                 return {
                     "success": False,
@@ -1515,7 +1514,7 @@ class OttawaRecBookingScraper:
             # Use cached button ID from startup or fall back to config
             button_id = self.activity_button_ids.get(
                 activity_type
-            ) or ACTIVITY_BUTTON_IDS.get(activity_type)
+            ) or self.activity_button_ids.get(activity_type)
             if not button_id:
                 return {
                     "success": False,
@@ -1526,7 +1525,7 @@ class OttawaRecBookingScraper:
             # Get the current ContactInfo page to get CSRF token
             # We need to be on the ContactInfo page - if not, we can't submit
             # Try to get the page URL from the last booking result or navigate there
-            url = f"{BOOKING_CF_URL}/ReserveTime/ContactInfo"
+            url = f"{self.booking_cf_url}/ReserveTime/ContactInfo"
 
             # Try to get the ContactInfo page
             response = self.session.get(
@@ -1569,7 +1568,7 @@ class OttawaRecBookingScraper:
 
             # Submit the form
             response = self.session.post(
-                f"{BOOKING_CF_URL}/ReserveTime/SubmitContactInfo",
+                f"{self.booking_cf_url}/ReserveTime/SubmitContactInfo",
                 data=form_data,
                 params={"culture": DEFAULT_CULTURE},
                 timeout=REQUEST_TIMEOUT,
