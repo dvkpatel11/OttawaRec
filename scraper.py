@@ -52,6 +52,7 @@ class OttawaRecBookingScraper:
         self.last_activity_url = None
         self.last_page_html = None
         self.activity_button_ids = {}  # Cache button IDs extracted at startup
+        self.activity_match_patterns = ACTIVITY_MATCH_PATTERNS.copy()  # Per-instance; override for multi-center
         # These will be set from the page during initialize_session():
         self.initial_page_url = None  # URL of the initial booking page
         self.booking_base_url = BOOKING_BASE_URL  # Can be updated from page
@@ -388,7 +389,7 @@ class OttawaRecBookingScraper:
         # Order within the dict matters: more specific activities should come first
         # (e.g. pickleball-intermediate before pickleball-rotation) so a candidate
         # button text like "pickleball - intermediate" maps to the right activity.
-        activity_patterns = ACTIVITY_MATCH_PATTERNS
+        activity_patterns = self.activity_match_patterns
 
         # Find all potential activity buttons/links
         # Look for buttons, links, or clickable divs

@@ -17,7 +17,11 @@
       "Bash(python app.py)",
       "Bash(xargs -I{} taskkill //PID {} //F)",
       "Bash(curl -s -X POST http://localhost:5000/api/telegram/setup-webhook -H \"Content-Type: application/json\" -d \"{\"\"base_url\"\": \"\"http://localhost:5000\"\"}\")",
-      "Bash(taskkill //PID 27248 //F)"
+      "Bash(taskkill //PID 27248 //F)",
+      "Bash(python -c \"import app\")",
+      "Bash(timeout /t 3 /nobreak)",
+      "Bash(curl -s http://localhost:5000/api/status)",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(''''centers:'''', list\\(d.get\\(''''centers'''',{}\\).keys\\(\\)\\)\\); print\\(''''processes:'''', list\\(d.get\\(''''processes'''',{}\\).keys\\(\\)\\)\\)\")"
     ]
   }
 }

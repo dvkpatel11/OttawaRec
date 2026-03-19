@@ -133,49 +133,61 @@
         white-space: nowrap;
       }
 
-      .center-select-wrapper {
-        flex: 1;
-        max-width: 360px;
-        position: relative;
+      /* ── Center section headers ──────────────────────────── */
+      .center-section {
+        margin-bottom: 48px;
       }
 
-      .center-select-wrapper::after {
-        content: "▾";
-        position: absolute;
-        right: 12px;
-        top: 50%;
-        transform: translateY(-50%);
-        color: #00ffff;
-        pointer-events: none;
-        font-size: 0.9em;
+      .center-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        margin-bottom: 12px;
+        background: linear-gradient(135deg, rgba(0, 255, 255, 0.08) 0%, rgba(0, 255, 136, 0.06) 100%);
+        border: 1.5px solid rgba(0, 255, 255, 0.25);
+        border-radius: 8px;
+        gap: 12px;
       }
 
-      .center-select {
-        width: 100%;
-        padding: 10px 36px 10px 14px;
-        background: rgba(0, 0, 0, 0.5);
-        border: 1.5px solid rgba(0, 255, 255, 0.4);
-        border-radius: 6px;
-        color: #00ffff;
-        font-family: "Rajdhani", sans-serif;
+      .center-header-left {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .center-name {
+        font-family: "Orbitron", monospace;
         font-size: 1em;
-        font-weight: 600;
-        cursor: pointer;
-        appearance: none;
-        -webkit-appearance: none;
-        outline: none;
-        transition: border-color 0.2s, box-shadow 0.2s;
-      }
-
-      .center-select:hover,
-      .center-select:focus {
-        border-color: #00ffff;
-        box-shadow: 0 0 10px rgba(0, 255, 255, 0.4);
-      }
-
-      .center-select option {
-        background: #0a0e27;
+        font-weight: 700;
         color: #00ffff;
+        text-shadow: 0 0 8px rgba(0, 255, 255, 0.6);
+        letter-spacing: 1px;
+      }
+
+      .center-area {
+        font-size: 0.82em;
+        color: rgba(0, 255, 255, 0.55);
+        font-weight: 500;
+        letter-spacing: 0.5px;
+      }
+
+      .center-link {
+        color: #00ff88;
+        text-decoration: none;
+        font-size: 0.88em;
+        font-weight: 600;
+        border: 1px solid rgba(0, 255, 136, 0.4);
+        padding: 6px 14px;
+        border-radius: 5px;
+        transition: all 0.2s;
+        white-space: nowrap;
+      }
+
+      .center-link:hover {
+        background: rgba(0, 255, 136, 0.12);
+        border-color: #00ff88;
+        box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
       }
 
       .header-actions {
@@ -253,9 +265,10 @@
 
       @media (max-width: 768px) {
         .header-title { font-size: 1.1em; letter-spacing: 1px; }
-        .center-select-wrapper { max-width: 180px; }
         .tg-panel { right: 8px; left: 8px; width: auto; }
         .header-inner { padding: 12px 10px; }
+        .center-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+        .center-link { align-self: flex-start; }
       }
 
       .table-container {
@@ -635,12 +648,6 @@
       <div class="header-inner">
         <span class="header-title">🏸 Ottawa Rec</span>
 
-        <div class="center-select-wrapper">
-          <select id="centerSelect" class="center-select" onchange="setCenter(this.value)">
-            <option value="">Loading…</option>
-          </select>
-        </div>
-
         <div class="header-actions">
           <button class="tg-btn" id="tgToggle" onclick="toggleTgPanel()" title="Telegram Notifications">
             🔔<span class="tg-dot" id="tgDot" style="display:none"></span>
@@ -693,22 +700,8 @@
 
     <div id="alerts"></div>
 
-    <div class="table-container">
-      <table>
-        <thead>
-          <tr>
-            <th>Sport</th>
-            <th>Group Size</th>
-            <th>Actions</th>
-            <th>Status</th>
-            <th>Details</th>
-          </tr>
-        </thead>
-        <tbody id="sportsTable">
-          <!-- Rows will be populated by JavaScript -->
-        </tbody>
-      </table>
-    </div>
+    <!-- Both center sections are rendered here by JS on first status load -->
+    <div id="centersContainer"></div>
 
     <script>
       // Stable browser-session identity — persists across page reloads, isolated per tab
@@ -724,68 +717,65 @@
         return fetch(url, options);
       }
 
-      // Populated dynamically from the active center's activities via /api/centers
-      let sports = [];
-
+      // State keyed by composite "centerId/activityId"
       const monitoringState = {};
-      const checkingState = {}; // Track which sports are currently being checked
-      const countdownTimers = {}; // Track countdown timers for each sport
-      const lastCheckTimes = {}; // Track when each sport was last checked
-      const CHECK_INTERVAL = 300; // 5 minutes in seconds
+      const checkingState  = {};
+      const countdownTimers = {};
+      const lastCheckTimes  = {};
+      const CHECK_INTERVAL  = 300; // 5 minutes in seconds
 
-      let currentBookingUrl = 'https://reservation.frontdesksuite.ca/rcfs/richcraftkanata';
+      let centersData = {};    // {centerId: {name, area, booking_url, activities}}
+      let centersRendered = false;
 
-      // ── Center selection ──────────────────────────────────────────────────
-      function rebuildSports(activities) {
-        sports = Object.entries(activities).map(([id, act]) => ({
-          id,
-          name: act.display_name,
-          groupSizeRequired: act.group_size_required,
-        }));
-        Object.keys(monitoringState).forEach(k => delete monitoringState[k]);
-        renderTable();
-      }
+      // ── Render both center tables ────────────────────────────────────────
+      function renderAllCenters(centers) {
+        const container = document.getElementById('centersContainer');
+        container.innerHTML = Object.entries(centers).map(([cid, center]) => {
+          const rows = Object.entries(center.activities).map(([aid, act]) => `
+            <tr id="row-${cid}-${aid}">
+              <td class="sport-name">${act.display_name}</td>
+              <td>
+                <input type="number" class="group-size-input" id="group-${cid}-${aid}"
+                  min="1" max="10" value="2" ${!act.group_size_required ? 'disabled' : ''}>
+              </td>
+              <td>
+                <div class="button-group">
+                  <button class="btn-start"  onclick="startMonitoring('${cid}','${aid}')" title="Start Monitoring">▶</button>
+                  <button class="btn-stop"   onclick="stopMonitoring('${cid}','${aid}')"  disabled title="Stop Monitoring">⏹</button>
+                  <button class="btn-check"  onclick="checkNow('${cid}','${aid}')"        title="Check Now">🔍</button>
+                </div>
+              </td>
+              <td class="status-cell"><span class="status-indicator inactive"></span></td>
+              <td class="details-cell"><span style="color:#999;">No details yet</span></td>
+            </tr>
+          `).join('');
 
-      function loadCenters() {
-        apiFetch('/api/centers')
-          .then(r => r.json())
-          .then(data => {
-            const sel = document.getElementById('centerSelect');
-            sel.innerHTML = '';
-            Object.entries(data.centers).forEach(([id, center]) => {
-              const opt = document.createElement('option');
-              opt.value = id;
-              opt.textContent = `${center.name} (${center.area})`;
-              if (id === data.active_center) opt.selected = true;
-              sel.appendChild(opt);
-            });
-            currentBookingUrl = data.booking_url;
-            const activeActivities = data.centers[data.active_center]?.activities || {};
-            rebuildSports(activeActivities);
-          })
-          .catch(() => {});
-      }
-
-      function setCenter(centerId) {
-        if (!centerId) return;
-        apiFetch('/api/set-center', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ center_id: centerId }),
-        })
-          .then(r => r.json())
-          .then(data => {
-            if (data.success) {
-              currentBookingUrl = data.booking_url;
-              showAlert(`Switched to ${data.center.name}`, 'success');
-              const activities = data.center.activities || {};
-              rebuildSports(activities);
-              updateStatus();
-            } else {
-              showAlert(data.message || 'Failed to switch center', 'error');
-            }
-          })
-          .catch(e => showAlert('Error: ' + e.message, 'error'));
+          return `
+            <div class="center-section">
+              <div class="center-header">
+                <div class="center-header-left">
+                  <span class="center-name">${center.name}</span>
+                  <span class="center-area">${center.area}</span>
+                </div>
+                <a href="${center.booking_url}" target="_blank" class="center-link">🔗 Book Online</a>
+              </div>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Sport</th>
+                      <th>Group Size</th>
+                      <th>Actions</th>
+                      <th>Status</th>
+                      <th>Details</th>
+                    </tr>
+                  </thead>
+                  <tbody id="table-${cid}">${rows}</tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        }).join('');
       }
 
       // ── Telegram panel toggle ─────────────────────────────────────────────
@@ -851,52 +841,37 @@
         apiFetch("/api/status")
           .then((res) => res.json())
           .then((data) => {
-            if (data.booking_url) currentBookingUrl = data.booking_url;
-            // Update each sport's status
-            sports.forEach((sport) => {
-              const state = data.processes?.[sport.id] || { active: false };
-              const currentState = monitoringState[sport.id] || {};
+            // First call: render both center tables
+            if (!centersRendered && data.centers && Object.keys(data.centers).length > 0) {
+              centersData = data.centers;
+              renderAllCenters(centersData);
+              centersRendered = true;
+            }
 
-              // Track when monitoring becomes active to start countdown
+            // Update each process state (keys are "centerId/activityId")
+            Object.entries(data.processes || {}).forEach(([ckey, state]) => {
+              const slash = ckey.indexOf('/');
+              if (slash === -1) return;
+              const cid = ckey.slice(0, slash);
+              const aid = ckey.slice(slash + 1);
+              const currentState = monitoringState[ckey] || {};
+
               if (state.active && !currentState.active) {
-                // Just started monitoring - set last check time to now
-                lastCheckTimes[sport.id] = Date.now();
-                // Start countdown immediately
-                if (!countdownTimers[sport.id]) {
-                  startCountdown(sport.id);
-                }
+                lastCheckTimes[ckey] = Date.now();
+                if (!countdownTimers[ckey]) startCountdown(ckey, cid, aid);
               } else if (!state.active && currentState.active) {
-                // Just stopped monitoring - clear countdown
-                stopCountdown(sport.id);
-                delete lastCheckTimes[sport.id];
+                stopCountdown(ckey, cid, aid);
+                delete lastCheckTimes[ckey];
               } else if (state.active) {
-                // Monitoring is active - ensure countdown is running
-                if (!lastCheckTimes[sport.id]) {
-                  lastCheckTimes[sport.id] = Date.now();
-                }
-                // Ensure countdown is running
-                if (!countdownTimers[sport.id]) {
-                  startCountdown(sport.id);
-                }
+                if (!lastCheckTimes[ckey]) lastCheckTimes[ckey] = Date.now();
+                if (!countdownTimers[ckey]) startCountdown(ckey, cid, aid);
               }
 
-              // Merge state: preserve slots from checkNow() unless process is active and has new slots
-              if (state.active && state.slots !== undefined) {
-                // Active monitoring - update with new slots
-                monitoringState[sport.id] = {
-                  ...currentState,
-                  ...state,
-                  slots: state.slots,
-                };
-              } else {
-                // Not active - preserve existing slots from checkNow(), but update other fields
-                monitoringState[sport.id] = {
-                  ...currentState,
-                  ...state,
-                  slots: currentState.slots !== undefined ? currentState.slots : state.slots,
-                };
-              }
-              updateSportRow(sport.id);
+              monitoringState[ckey] = state.active && state.slots !== undefined
+                ? { ...currentState, ...state, slots: state.slots }
+                : { ...currentState, ...state, slots: currentState.slots !== undefined ? currentState.slots : state.slots };
+
+              updateSportRow(cid, aid);
             });
           })
           .catch((err) => console.error("Status check failed:", err));
@@ -908,84 +883,59 @@
         return `${mins}:${secs.toString().padStart(2, "0")}`;
       }
 
-      function updateCountdown(sportId) {
-        // Check if monitoring is still active
-        if (!monitoringState[sportId]?.active) {
-          return;
-        }
+      function updateCountdown(ckey, cid, aid) {
+        if (!monitoringState[ckey]?.active) return;
+        if (!lastCheckTimes[ckey]) lastCheckTimes[ckey] = Date.now();
 
-        if (!lastCheckTimes[sportId]) {
-          // If no last check time but monitoring is active, set it to now
-          lastCheckTimes[sportId] = Date.now();
-        }
-
-        const now = Date.now();
-        const elapsed = Math.floor((now - lastCheckTimes[sportId]) / 1000);
+        const elapsed = Math.floor((Date.now() - lastCheckTimes[ckey]) / 1000);
         const remaining = Math.max(0, CHECK_INTERVAL - elapsed);
 
-        const statusCell = document.querySelector(`#row-${sportId} .status-cell`);
-        if (!statusCell) {
-          return;
+        const statusCell = document.querySelector(`#row-${cid}-${aid} .status-cell`);
+        if (!statusCell) return;
+
+        let timerEl = statusCell.querySelector(".countdown-timer");
+        if (!timerEl) {
+          timerEl = document.createElement("span");
+          timerEl.className = "countdown-timer";
+          statusCell.appendChild(timerEl);
         }
 
-        let timerElement = statusCell.querySelector(".countdown-timer");
-
-        // Create timer element if it doesn't exist
-        if (!timerElement) {
-          timerElement = document.createElement("span");
-          timerElement.className = "countdown-timer";
-          statusCell.appendChild(timerElement);
-        }
-
-        // Update timer text
         if (remaining > 0) {
-          timerElement.textContent = `Next check in ${formatTime(remaining)}`;
+          timerEl.textContent = `Next check in ${formatTime(remaining)}`;
         } else {
-          timerElement.textContent = "Checking...";
-          // Reset countdown after check completes
-          if (monitoringState[sportId]?.active) {
-            lastCheckTimes[sportId] = Date.now();
-          }
+          timerEl.textContent = "Checking...";
+          if (monitoringState[ckey]?.active) lastCheckTimes[ckey] = Date.now();
         }
       }
 
-      function startCountdown(sportId) {
-        // Clear any existing timer
-        stopCountdown(sportId);
-
-        // Update immediately
-        updateCountdown(sportId);
-
-        // Update every second
-        countdownTimers[sportId] = setInterval(() => {
-          updateCountdown(sportId);
-        }, 1000);
+      function startCountdown(ckey, cid, aid) {
+        stopCountdown(ckey, cid, aid);
+        updateCountdown(ckey, cid, aid);
+        countdownTimers[ckey] = setInterval(() => updateCountdown(ckey, cid, aid), 1000);
       }
 
-      function stopCountdown(sportId) {
-        if (countdownTimers[sportId]) {
-          clearInterval(countdownTimers[sportId]);
-          delete countdownTimers[sportId];
+      function stopCountdown(ckey, cid, aid) {
+        if (countdownTimers[ckey]) {
+          clearInterval(countdownTimers[ckey]);
+          delete countdownTimers[ckey];
         }
-
-        const statusCell = document.querySelector(`#row-${sportId} .status-cell`);
+        const statusCell = document.querySelector(`#row-${cid}-${aid} .status-cell`);
         if (statusCell) {
-          const timerElement = statusCell.querySelector(".countdown-timer");
-          if (timerElement) {
-            timerElement.remove();
-          }
+          const timerEl = statusCell.querySelector(".countdown-timer");
+          if (timerEl) timerEl.remove();
         }
       }
 
-      function selectSlot(sportId, slotIndex) {
-        const state = monitoringState[sportId];
+      function selectSlot(cid, aid, slotIndex) {
+        const ckey = cid + '/' + aid;
+        const state = monitoringState[ckey];
         if (!state || !state.slots || !state.slots[slotIndex]) {
           showAlert("Slot not available", "error");
           return;
         }
 
         const slot = state.slots[slotIndex];
-        const groupSize = parseInt(document.getElementById(`group-${sportId}`).value) || 2;
+        const groupSize = parseInt(document.getElementById(`group-${cid}-${aid}`).value) || 2;
 
         showAlert("Selecting slot and loading contact form...", "info");
 
@@ -993,7 +943,8 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            activity_type: sportId,
+            center_id: cid,
+            activity_type: aid,
             slot_data: slot,
             group_size: groupSize,
           }),
@@ -1001,7 +952,7 @@
           .then((res) => res.json())
           .then((data) => {
             if (data.success && data.fields) {
-              showContactForm(sportId, slot, data.fields, data.csrf_token);
+              showContactForm(cid, aid, slot, data.fields, data.csrf_token);
             } else {
               const errorMsg = data.message || "Failed to load contact form";
               const errorType = data.error_type ? ` (${data.error_type})` : "";
@@ -1013,7 +964,8 @@
           });
       }
 
-      function showContactForm(sportId, slot, fields, csrfToken) {
+      function showContactForm(cid, aid, slot, fields, csrfToken) {
+        const sportId = cid + '/' + aid;
         // Create modal or form display
         const modal = document.createElement("div");
         modal.id = "contactModal";
@@ -1151,7 +1103,8 @@
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              activity_type: sportId,
+              center_id: cid,
+              activity_type: aid,
               field_values: fieldValues,
             }),
           })
@@ -1181,182 +1134,116 @@
         }
       }
 
-      function updateSportRow(sportId) {
-        const state = monitoringState[sportId] || { active: false };
-        const row = document.getElementById(`row-${sportId}`);
+      function updateSportRow(cid, aid) {
+        const ckey = cid + '/' + aid;
+        const state = monitoringState[ckey] || { active: false };
+        const row = document.getElementById(`row-${cid}-${aid}`);
         if (!row) return;
 
-        const statusCell = row.querySelector(".status-cell");
-        const startBtn = row.querySelector(".btn-start");
-        const stopBtn = row.querySelector(".btn-stop");
-        const checkBtn = row.querySelector(".btn-check");
+        const statusCell  = row.querySelector(".status-cell");
+        const startBtn    = row.querySelector(".btn-start");
+        const stopBtn     = row.querySelector(".btn-stop");
+        const checkBtn    = row.querySelector(".btn-check");
         const detailsCell = row.querySelector(".details-cell");
 
         if (state.active) {
-          // Show monitoring status with countdown timer
-          // Don't replace innerHTML if timer exists - just update the status parts
-          const existingTimer = statusCell.querySelector(".countdown-timer");
+          const existingTimer     = statusCell.querySelector(".countdown-timer");
           const existingIndicator = statusCell.querySelector(".status-indicator");
-          const existingStatusText = statusCell.querySelector(".status-text");
-
-          // Preserve timer if it exists
+          const existingText      = statusCell.querySelector(".status-text");
           const timerText = existingTimer ? existingTimer.textContent : "";
 
-          // Only update if elements don't exist
-          if (!existingIndicator || !existingStatusText) {
-            // Create status indicator and text if missing
-            const statusWrapper = document.createElement("span");
-            statusWrapper.innerHTML = `
-                        <span class="status-indicator active"></span>
-                        <span class="status-text">Monitoring</span>
-                    `;
-            // Clear and rebuild, but preserve timer
-            if (existingTimer) {
-              existingTimer.remove();
-            }
+          if (!existingIndicator || !existingText) {
+            const wrapper = document.createElement("span");
+            wrapper.innerHTML = `<span class="status-indicator active"></span><span class="status-text">Monitoring</span>`;
+            if (existingTimer) existingTimer.remove();
             statusCell.innerHTML = "";
-            statusCell.appendChild(statusWrapper);
+            statusCell.appendChild(wrapper);
           } else {
-            // Just ensure indicator is active
             existingIndicator.className = "status-indicator active";
-            existingStatusText.textContent = "Monitoring";
+            existingText.textContent = "Monitoring";
           }
 
-          // Ensure countdown timer exists (re-add if it was removed)
           if (!statusCell.querySelector(".countdown-timer")) {
-            const timerElement = document.createElement("span");
-            timerElement.className = "countdown-timer";
-            timerElement.textContent = timerText || "Next check in 5:00";
-            statusCell.appendChild(timerElement);
+            const timerEl = document.createElement("span");
+            timerEl.className = "countdown-timer";
+            timerEl.textContent = timerText || "Next check in 5:00";
+            statusCell.appendChild(timerEl);
           }
 
-          // Ensure countdown is running
-          if (!countdownTimers[sportId]) {
-            if (!lastCheckTimes[sportId]) {
-              lastCheckTimes[sportId] = Date.now();
-            }
-            startCountdown(sportId);
+          if (!countdownTimers[ckey]) {
+            if (!lastCheckTimes[ckey]) lastCheckTimes[ckey] = Date.now();
+            startCountdown(ckey, cid, aid);
           } else {
-            // Update countdown immediately if timer is already running
-            updateCountdown(sportId);
+            updateCountdown(ckey, cid, aid);
           }
 
           if (startBtn) startBtn.disabled = true;
-          if (stopBtn) stopBtn.disabled = false;
+          if (stopBtn)  stopBtn.disabled  = false;
           if (checkBtn) checkBtn.disabled = true;
         } else {
           statusCell.innerHTML = '<span class="status-indicator inactive"></span>';
-          // Stop countdown if monitoring is not active
-          stopCountdown(sportId);
+          stopCountdown(ckey, cid, aid);
           if (startBtn) startBtn.disabled = false;
-          if (stopBtn) stopBtn.disabled = true;
+          if (stopBtn)  stopBtn.disabled  = true;
           if (checkBtn) checkBtn.disabled = false;
         }
 
-        // Always show details from latest check (even if no slots found)
-        // Check if we have slots data (even if empty array)
+        const pageLink = centersData[cid]?.booking_url || '#';
+
         if (state.slots !== undefined) {
-          // Filter out disabled/unavailable slots (show only available ones)
-          const availableSlots = state.slots.filter((slot) => {
-            return !slot.disabled && slot.available !== false;
-          });
+          const availableSlots = state.slots.filter(s => !s.disabled && s.available !== false);
 
-          // Extract filename from screenshot path (handle both / and \ separators)
-          let screenshotFilename = "";
+          let screenshotLink = "";
           if (state.screenshot) {
-            const pathParts = state.screenshot.replace(/\\/g, "/").split("/");
-            screenshotFilename = pathParts[pathParts.length - 1];
+            const fname = state.screenshot.replace(/\\/g, "/").split("/").pop();
+            screenshotLink = `<a href="/screenshots/${fname}" target="_blank" style="display:block;margin-top:8px;color:#00ffff;text-decoration:none;font-weight:600;">📄 View Details</a>`;
           }
-          const screenshotLink = screenshotFilename
-            ? `<a href="/screenshots/${screenshotFilename}" target="_blank" class="detail-link" style="display: block; margin-top: 8px; color: #00ffff; text-decoration: none; font-weight: 600;">📄 View Details</a>`
-            : "";
-
-          const pageLink = currentBookingUrl;
 
           if (availableSlots.length > 0) {
-            // Show ALL slots (not limited)
-            const slotsHtml = availableSlots
-              .map((slot, index) => {
-                const slotTime = slot.full_datetime || `${slot.date} ${slot.time}`;
-                // Find original index in state.slots for selectSlot function
-                const originalIndex = state.slots.indexOf(slot);
-                return `
-                            <div style="margin-bottom: 8px; padding: 12px; background: rgba(0, 255, 255, 0.1); border: 1px solid rgba(0, 255, 255, 0.3); border-radius: 4px; box-shadow: 0 0 5px rgba(0, 255, 255, 0.2);">
-                                <div style="margin-bottom: 6px; font-weight: 600; color: #00ffff; font-family: 'Orbitron', monospace;">${slotTime}</div>
-                                <button onclick="selectSlot('${sportId}', ${originalIndex})" class="btn-book-slot" style="padding: 6px 16px; font-size: 0.85em; cursor: pointer; border-radius: 4px; background: rgba(0, 255, 136, 0.3); color: #00ff88; border: 2px solid #00ff88; font-weight: 600; transition: all 0.3s ease;" onmouseover="this.style.background='rgba(0,255,136,0.5)'" onmouseout="this.style.background='rgba(0,255,136,0.3)'">Book</button>
-                            </div>
-                        `;
-              })
-              .join("");
+            const slotsHtml = availableSlots.map((slot) => {
+              const slotTime = slot.full_datetime || `${slot.date} ${slot.time}`;
+              const originalIndex = state.slots.indexOf(slot);
+              return `
+                <div style="margin-bottom:8px;padding:12px;background:rgba(0,255,255,0.1);border:1px solid rgba(0,255,255,0.3);border-radius:4px;">
+                  <div style="margin-bottom:6px;font-weight:600;color:#00ffff;font-family:'Orbitron',monospace;">${slotTime}</div>
+                  <button onclick="selectSlot('${cid}','${aid}',${originalIndex})" style="padding:6px 16px;font-size:0.85em;cursor:pointer;border-radius:4px;background:rgba(0,255,136,0.3);color:#00ff88;border:2px solid #00ff88;font-weight:600;" onmouseover="this.style.background='rgba(0,255,136,0.5)'" onmouseout="this.style.background='rgba(0,255,136,0.3)'">Book</button>
+                </div>
+              `;
+            }).join("");
 
             detailsCell.innerHTML = `
-                        <div>
-                            <div style="margin-bottom: 12px; font-weight: 700; color: #00ff88; font-family: 'Orbitron', monospace; text-shadow: 0 0 5px rgba(0, 255, 136, 0.5); font-size: 1.1em;">${availableSlots.length} slot(s) available</div>
-                            <div style="max-height: 400px; overflow-y: auto; margin-bottom: 12px; padding-right: 5px; scrollbar-width: thin; scrollbar-color: rgba(0, 255, 255, 0.5) transparent;">
-                                ${slotsHtml}
-                            </div>
-                            ${screenshotLink}
-                            <a href="${pageLink}" target="_blank" class="detail-link" style="display: block; margin-top: 8px; color: #00ffff; text-decoration: none; font-weight: 600; padding: 10px; background: rgba(0, 255, 255, 0.15); border: 1px solid rgba(0, 255, 255, 0.4); border-radius: 6px; text-align: center; transition: all 0.3s ease;" onmouseover="this.style.background='rgba(0,255,255,0.25)'; this.style.boxShadow='0 0 10px rgba(0,255,255,0.5)'" onmouseout="this.style.background='rgba(0,255,255,0.15)'; this.style.boxShadow='none'">🔗 View All ${availableSlots.length} Slots on Booking Page</a>
-                        </div>
-                    `;
+              <div>
+                <div style="margin-bottom:12px;font-weight:700;color:#00ff88;font-family:'Orbitron',monospace;font-size:1.1em;">${availableSlots.length} slot(s) available</div>
+                <div style="max-height:400px;overflow-y:auto;margin-bottom:12px;padding-right:5px;">${slotsHtml}</div>
+                ${screenshotLink}
+                <a href="${pageLink}" target="_blank" style="display:block;margin-top:8px;color:#00ffff;text-decoration:none;font-weight:600;padding:10px;background:rgba(0,255,255,0.15);border:1px solid rgba(0,255,255,0.4);border-radius:6px;text-align:center;">🔗 View All ${availableSlots.length} Slots on Booking Page</a>
+              </div>
+            `;
           } else {
-            // No available slots - show message and links
             detailsCell.innerHTML = `
-                        <div>
-                            <div style="margin-bottom: 8px; color: rgba(255, 255, 255, 0.6); font-weight: 500;">No available slots</div>
-                            ${screenshotLink}
-                            <a href="${pageLink}" target="_blank" class="detail-link" style="display: block; margin-top: 8px; color: #00ffff; text-decoration: none; font-weight: 600;">🔗 Booking Page</a>
-                        </div>
-                    `;
+              <div>
+                <div style="margin-bottom:8px;color:rgba(255,255,255,0.6);font-weight:500;">No available slots</div>
+                ${screenshotLink}
+                <a href="${pageLink}" target="_blank" style="display:block;margin-top:8px;color:#00ffff;text-decoration:none;font-weight:600;">🔗 Booking Page</a>
+              </div>
+            `;
           }
         } else if (state.screenshot) {
-          // Has screenshot but no slots data yet
-          const pathParts = state.screenshot.replace(/\\/g, "/").split("/");
-          const filename = pathParts[pathParts.length - 1];
-          const detailLink = `/screenshots/${filename}`;
-          const pageLink = currentBookingUrl;
+          const fname = state.screenshot.replace(/\\/g, "/").split("/").pop();
           detailsCell.innerHTML = `
-                    <div style="display: flex; flex-direction: column; gap: 5px;">
-                        <a href="${detailLink}" target="_blank" class="detail-link" style="color: #00ffff; text-decoration: none; font-weight: 600;">📄 View Details</a>
-                        <a href="${pageLink}" target="_blank" class="detail-link" style="color: #00ffff; text-decoration: none; font-weight: 600;">🔗 Booking Page</a>
-                    </div>
-                `;
+            <div style="display:flex;flex-direction:column;gap:5px;">
+              <a href="/screenshots/${fname}" target="_blank" style="color:#00ffff;text-decoration:none;font-weight:600;">📄 View Details</a>
+              <a href="${pageLink}" target="_blank" style="color:#00ffff;text-decoration:none;font-weight:600;">🔗 Booking Page</a>
+            </div>
+          `;
         } else {
-          detailsCell.innerHTML = '<span style="color: rgba(0, 255, 255, 0.5);">No details yet</span>';
+          detailsCell.innerHTML = '<span style="color:rgba(0,255,255,0.5);">No details yet</span>';
         }
       }
 
-      function renderTable() {
-        const tbody = document.getElementById("sportsTable");
-        tbody.innerHTML = sports
-          .map(
-            (sport) => `
-                <tr id="row-${sport.id}">
-                    <td class="sport-name">${sport.name}</td>
-                    <td>
-                        <input type="number" class="group-size-input" id="group-${sport.id}" min="1" max="10" value="2" ${!sport.groupSizeRequired ? "disabled" : ""}>
-                    </td>
-                    <td>
-                        <div class="button-group">
-                            <button class="btn-start" onclick="startMonitoring('${sport.id}')" title="Start Monitoring">▶</button>
-                            <button class="btn-stop" onclick="stopMonitoring('${sport.id}')" disabled title="Stop Monitoring">⏹</button>
-                            <button class="btn-check" onclick="checkNow('${sport.id}')" title="Check Now">🔍</button>
-                        </div>
-                    </td>
-                    <td class="status-cell">
-                        <span class="status-indicator inactive"></span>
-                    </td>
-                    <td class="details-cell">
-                        <span style="color: #999;">No details yet</span>
-                    </td>
-                </tr>
-            `,
-          )
-          .join("");
-      }
-
-      function startMonitoring(sportId) {
-        const groupSize = parseInt(document.getElementById(`group-${sportId}`).value) || 2;
+      function startMonitoring(cid, aid) {
+        const ckey = cid + '/' + aid;
+        const groupSize = parseInt(document.getElementById(`group-${cid}-${aid}`).value) || 2;
 
         if (groupSize < 1 || groupSize > 10) {
           showAlert("Group size must be between 1 and 10", "error");
@@ -1366,64 +1253,50 @@
         apiFetch("/api/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            activity_type: sportId,
-            group_size: groupSize,
-          }),
+          body: JSON.stringify({ center_id: cid, activity_type: aid, group_size: groupSize }),
         })
-          .then((res) => res.json())
-          .then((data) => {
+          .then(res => res.json())
+          .then(data => {
             if (data.success) {
-              showAlert(`Monitoring started for ${sports.find((s) => s.id === sportId).name}`, "success");
-              // Set last check time to now to start countdown
-              lastCheckTimes[sportId] = Date.now();
-              // Start countdown immediately
-              if (!countdownTimers[sportId]) {
-                startCountdown(sportId);
-              }
+              const actName = centersData[cid]?.activities?.[aid]?.display_name || aid;
+              showAlert(`Monitoring started for ${actName}`, "success");
+              lastCheckTimes[ckey] = Date.now();
+              if (!countdownTimers[ckey]) startCountdown(ckey, cid, aid);
               updateStatus();
             } else {
               showAlert(data.message || "Failed to start", "error");
             }
           })
-          .catch((err) => {
-            showAlert("Error: " + err.message, "error");
-          });
+          .catch(err => showAlert("Error: " + err.message, "error"));
       }
 
-      function stopMonitoring(sportId) {
+      function stopMonitoring(cid, aid) {
         apiFetch("/api/stop", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ activity_type: sportId }),
+          body: JSON.stringify({ center_id: cid, activity_type: aid }),
         })
-          .then((res) => res.json())
-          .then((data) => {
+          .then(res => res.json())
+          .then(data => {
             if (data.success) {
-              showAlert(`Monitoring stopped for ${sports.find((s) => s.id === sportId).name}`, "info");
+              const actName = centersData[cid]?.activities?.[aid]?.display_name || aid;
+              showAlert(`Monitoring stopped for ${actName}`, "info");
               updateStatus();
             } else {
               showAlert(data.message || "Failed to stop", "error");
             }
           })
-          .catch((err) => {
-            showAlert("Error: " + err.message, "error");
-          });
+          .catch(err => showAlert("Error: " + err.message, "error"));
       }
 
-      function checkNow(sportId) {
-        // Prevent multiple simultaneous checks
-        if (checkingState[sportId]) {
-          return;
-        }
+      function checkNow(cid, aid) {
+        const ckey = cid + '/' + aid;
+        if (checkingState[ckey]) return;
 
-        const row = document.getElementById(`row-${sportId}`);
-        if (!row) {
-          showAlert("Error: Row not found", "error");
-          return;
-        }
+        const row = document.getElementById(`row-${cid}-${aid}`);
+        if (!row) { showAlert("Error: Row not found", "error"); return; }
 
-        const groupSizeInput = document.getElementById(`group-${sportId}`);
+        const groupSizeInput = document.getElementById(`group-${cid}-${aid}`);
         const groupSize = groupSizeInput ? parseInt(groupSizeInput.value) || 2 : 2;
 
         if (groupSize < 1 || groupSize > 10) {
@@ -1432,62 +1305,39 @@
         }
 
         const checkBtn = row.querySelector(".btn-check");
-        if (!checkBtn) {
-          showAlert("Error: Check button not found", "error");
-          return;
-        }
+        if (!checkBtn) { showAlert("Error: Check button not found", "error"); return; }
 
-        // Mark as checking and disable button
-        checkingState[sportId] = true;
+        checkingState[ckey] = true;
         checkBtn.disabled = true;
 
-        // Single check - don't trigger status polling
         apiFetch("/api/check-now", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            activity_type: sportId,
-            group_size: groupSize,
-          }),
+          body: JSON.stringify({ center_id: cid, activity_type: aid, group_size: groupSize }),
         })
-          .then((res) => res.json())
-          .then((data) => {
-            // Always update state with check result (even if no slots found)
-            if (!monitoringState[sportId]) {
-              monitoringState[sportId] = {};
-            }
-            // Update slots (empty array if none found)
-            monitoringState[sportId].slots = data.slots || [];
-            // Update screenshot if available (even on errors)
-            if (data.screenshot) {
-              monitoringState[sportId].screenshot = data.screenshot;
-            }
-            // Always update the row to show latest check result (single update, no polling)
-            updateSportRow(sportId);
+          .then(res => res.json())
+          .then(data => {
+            if (!monitoringState[ckey]) monitoringState[ckey] = {};
+            monitoringState[ckey].slots = data.slots || [];
+            if (data.screenshot) monitoringState[ckey].screenshot = data.screenshot;
+            updateSportRow(cid, aid);
 
             if (data.success && data.slots && data.slots.length > 0) {
               showAlert(`Found ${data.slots.length} available slot(s)`, "success");
             } else if (!data.success) {
-              // Show error message with details
-              const errorMsg = data.message || "Failed to check for slots";
-              const errorType = data.error_type || "unknown";
-              showAlert(`${errorMsg} (${errorType})`, "error");
+              showAlert(`${data.message || "Failed to check"} (${data.error_type || "unknown"})`, "error");
             } else {
               showAlert(data.message || "No slots found", "info");
             }
           })
-          .catch((err) => {
-            showAlert("Error: " + err.message, "error");
-          })
+          .catch(err => showAlert("Error: " + err.message, "error"))
           .finally(() => {
-            // Always re-enable button and clear checking state
-            checkingState[sportId] = false;
+            checkingState[ckey] = false;
             checkBtn.disabled = false;
           });
       }
 
-      // Initialize — loadCenters() calls rebuildSports() which calls renderTable()
-      loadCenters();
+      // Initialize — updateStatus() fetches centers on first call and renders tables
       updateStatus();
       setInterval(updateStatus, 3000);
 

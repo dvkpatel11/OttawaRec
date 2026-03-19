@@ -54,20 +54,6 @@ RECREATION_CENTERS = {
             },
         },
     },
-    "walterbaker": {
-        "name": "Tony Graham Recreation Complex (Walter Baker Sports Centre)",
-        "slug": "walterbaker",
-        "area": "Kanata South",
-        "page_id": "0c5c451b-cbab-42ac-8298-69a4817c5bcc",
-        "activities": {},  # No racquet sports offered at this centre
-    },
-    "kanataleisurecentre": {
-        "name": "Kanata Leisure Centre and Wave Pool",
-        "slug": "kanataleisurecentre",
-        "area": "Kanata",
-        "page_id": None,  # No reservation system — walk-in only
-        "activities": {},
-    },
     "cardelrec": {
         "name": "CARDELREC Recreation Complex – Goulbourn",
         "slug": "cardelrec",

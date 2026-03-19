@@ -9,7 +9,6 @@ from scraper import OttawaRecBookingScraper
 from telegram_notifier import TelegramNotifier
 from config import FLASK_SECRET_KEY, FLASK_HOST, FLASK_PORT
 import config as _config
-import scraper as _scraper_module
 import threading
 import time
 
@@ -96,11 +95,12 @@ def _handle_telegram_message(message: dict):
     else:
         if telegram.add_chat_id(chat_id):
             save_chat_ids(telegram.chat_ids)
-            from config import RECREATION_CENTERS, ACTIVE_CENTER
-            center_name = RECREATION_CENTERS[ACTIVE_CENTER]['name']
+            center_names = ' &amp; '.join(
+                c['name'] for c in _config.RECREATION_CENTERS.values() if c.get('activities')
+            )
             telegram.send_to(chat_id,
                 f"👋 Hi {first_name}! You're now subscribed to <b>Ottawa Rec Booking</b> alerts.\n\n"
-                f"📍 Currently watching: <b>{center_name}</b>\n\n"
+                f"📍 Watching: <b>{center_names}</b>\n\n"
                 f"You'll get a message as soon as a slot opens up.\n\n"
                 f"Send /stop at any time to unsubscribe."
             )
@@ -136,68 +136,80 @@ if telegram.enabled:
     _poll_thread = threading.Thread(target=_telegram_poll_loop, daemon=True)
     _poll_thread.start()
 
-# Shared scrapers used for monitoring / check-now (one per activity type).
-# Keeping a single HTTP session per activity avoids the booking site's
-# "multiple browser tabs" detection, which triggers when multiple requests.Session()
-# objects hit the site simultaneously.
-monitoring_processes = {}  # {activity_type: {active, group_size, ...}}
-shared_scrapers = {}       # {activity_type: OttawaRecBookingScraper}
+# Shared scrapers used for monitoring / check-now.
+# Keyed by composite "center_id/activity_type" to support multiple centers simultaneously.
+monitoring_processes = {}  # {"center_id/activity_type": {active, group_size, ...}}
+shared_scrapers = {}       # {"center_id/activity_type": OttawaRecBookingScraper}
 
-# Per-browser-session scrapers used ONLY for the booking flow (select-slot,
-# submit-contact).  Each user gets their own isolated HTTP session so their
-# booking state doesn't collide with other users.
-booking_scrapers = {}  # {session_id: {activity_type: OttawaRecBookingScraper}}
+# Per-browser-session scrapers used ONLY for the booking flow (select-slot, submit-contact).
+booking_scrapers = {}  # {session_id: {"center_id/activity_type": OttawaRecBookingScraper}}
 
 def _session_id() -> str:
     """Extract the browser session ID from the request header."""
     return request.headers.get('X-Session-Id', 'default')
 
-def get_shared_scraper(activity_type: str) -> 'OttawaRecBookingScraper':
-    """Get or create the shared (monitoring) scraper for an activity type."""
-    if activity_type not in shared_scrapers:
+def _configure_scraper_for_center(scraper, center_id: str):
+    """Apply center-specific URLs and activity config to a scraper instance."""
+    center = _config.RECREATION_CENTERS[center_id]
+    slug = center['slug']
+    activities = center.get('activities', {})
+    scraper.booking_base_url = f"https://reservation.frontdesksuite.ca/rcfs/{slug}"
+    scraper.booking_cf_url = f"https://reservation-cf.frontdeskqms.ca/rcfs/{slug}"
+    scraper.current_page_id = center.get('page_id') or _config.PAGE_ID
+    scraper.activity_button_ids = {a: v['button_id'] for a, v in activities.items()}
+    scraper.activity_match_patterns = {a: v['match_patterns'] for a, v in activities.items()}
+
+def get_shared_scraper(center_id: str, activity_type: str) -> 'OttawaRecBookingScraper':
+    """Get or create the shared (monitoring) scraper for a center+activity."""
+    ckey = f"{center_id}/{activity_type}"
+    if ckey not in shared_scrapers:
         s = OttawaRecBookingScraper()
         s.clear_screenshots()
-        shared_scrapers[activity_type] = s
-    return shared_scrapers[activity_type]
+        _configure_scraper_for_center(s, center_id)
+        shared_scrapers[ckey] = s
+    return shared_scrapers[ckey]
 
-def get_booking_scraper(session_id: str, activity_type: str) -> 'OttawaRecBookingScraper':
+def get_booking_scraper(session_id: str, center_id: str, activity_type: str) -> 'OttawaRecBookingScraper':
     """Get or create a per-session scraper for the booking flow."""
+    ckey = f"{center_id}/{activity_type}"
     if session_id not in booking_scrapers:
         booking_scrapers[session_id] = {}
-    if activity_type not in booking_scrapers[session_id]:
+    if ckey not in booking_scrapers[session_id]:
         s = OttawaRecBookingScraper()
         s.clear_screenshots()
-        booking_scrapers[session_id][activity_type] = s
-    return booking_scrapers[session_id][activity_type]
+        _configure_scraper_for_center(s, center_id)
+        booking_scrapers[session_id][ckey] = s
+    return booking_scrapers[session_id][ckey]
 
 # Session lock to prevent multiple simultaneous bookings
 import threading
 session_lock = threading.Lock()
 
 
-def monitor_loop(activity_type: str = 'badminton-16+', group_size: int = 2):
-    """Background monitoring loop using the shared scraper for an activity type."""
+def monitor_loop(center_id: str, activity_type: str, group_size: int = 2):
+    """Background monitoring loop using the shared scraper for a center+activity."""
     global monitoring_processes
 
-    scraper = get_shared_scraper(activity_type)
+    ckey = f"{center_id}/{activity_type}"
+    scraper = get_shared_scraper(center_id, activity_type)
 
     if not scraper.initialize_session():
-        logger.error(f"Failed to initialize scraper for {activity_type}")
+        logger.error(f"Failed to initialize scraper for {ckey}")
         telegram.notify_error(f"Failed to initialize booking session for {activity_type}")
-        if activity_type in monitoring_processes:
-            monitoring_processes[activity_type]['active'] = False
+        if ckey in monitoring_processes:
+            monitoring_processes[ckey]['active'] = False
         return
 
     check_count = 0
-    while monitoring_processes.get(activity_type, {}).get('active', False):
+    while monitoring_processes.get(ckey, {}).get('active', False):
         try:
             check_count += 1
-            proc = monitoring_processes[activity_type]
+            proc = monitoring_processes[ckey]
 
             with session_lock:
                 if not scraper.current_session_id:
                     if not scraper.initialize_session():
-                        logger.error(f"Failed to re-initialize scraper for {activity_type}")
+                        logger.error(f"Failed to re-initialize scraper for {ckey}")
                         telegram.notify_error(f"Failed to re-initialize session for {activity_type}")
                         proc['last_error'] = {'message': 'Failed to re-initialize session', 'error_type': 'session_error'}
                         time.sleep(60)
@@ -233,20 +245,20 @@ def monitor_loop(activity_type: str = 'badminton-16+', group_size: int = 2):
                     telegram.notify_slot_found(slots, activity_type)
 
             wait_seconds = 300
-            if monitoring_processes.get(activity_type, {}).get('active', False):
+            if monitoring_processes.get(ckey, {}).get('active', False):
                 for _ in range(wait_seconds):
-                    if not monitoring_processes.get(activity_type, {}).get('active', False):
+                    if not monitoring_processes.get(ckey, {}).get('active', False):
                         break
                     time.sleep(1)
 
         except Exception as e:
             import traceback
-            logger.error(f"Monitoring error for {activity_type}: {str(e)}\n{traceback.format_exc()}")
+            logger.error(f"Monitoring error for {ckey}: {str(e)}\n{traceback.format_exc()}")
             telegram.notify_error(f"Monitoring error for {activity_type}: {str(e)}")
             time.sleep(60)
 
-    if activity_type in monitoring_processes:
-        monitoring_processes[activity_type]['active'] = False
+    if ckey in monitoring_processes:
+        monitoring_processes[ckey]['active'] = False
 
 
 @app.route('/', methods=['GET', 'OPTIONS'])
@@ -272,52 +284,42 @@ def start_monitoring():
 
     try:
         data = request.json or {}
+        center_id = data.get('center_id', _config.ACTIVE_CENTER)
         activity_type = data.get('activity_type', 'badminton-16+')
         group_size = int(data.get('group_size', 2))
-        # Validate group size
+
+        if center_id not in _config.RECREATION_CENTERS:
+            return jsonify({'success': False, 'message': f'Unknown center: {center_id}'}), 400
+
         if group_size < 1 or group_size > 10:
-            return jsonify({
-                'success': False,
-                'message': 'Group size must be between 1 and 10'
-            }), 400
+            return jsonify({'success': False, 'message': 'Group size must be between 1 and 10'}), 400
 
-        # Check if already monitoring this activity
-        if monitoring_processes.get(activity_type, {}).get('active', False):
-            return jsonify({
-                'success': False,
-                'message': 'Monitoring is already active for this sport'
-            }), 400
+        ckey = f"{center_id}/{activity_type}"
+        if monitoring_processes.get(ckey, {}).get('active', False):
+            return jsonify({'success': False, 'message': 'Monitoring is already active for this sport'}), 400
 
-        # Create new monitoring process (shared across all sessions)
-        monitoring_processes[activity_type] = {
-            'active': True,
-            'group_size': group_size,
-            'result': None
-        }
+        monitoring_processes[ckey] = {'active': True, 'group_size': group_size, 'result': None}
 
         thread = threading.Thread(
             target=monitor_loop,
-            args=(activity_type, group_size),
+            args=(center_id, activity_type, group_size),
             daemon=True
         )
         thread.start()
-        monitoring_processes[activity_type]['thread'] = thread
+        monitoring_processes[ckey]['thread'] = thread
 
-        return jsonify({
-            'success': True,
-            'message': 'Monitoring started successfully'
-        })
+        return jsonify({'success': True, 'message': 'Monitoring started successfully'})
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
         logger.error(f"Failed to start monitoring: {str(e)}\n{error_details}")
-        activity_type = (request.json or {}).get('activity_type', 'badminton-16+')
-        if activity_type in monitoring_processes:
-            monitoring_processes[activity_type]['active'] = False
-        return jsonify({
-            'success': False,
-            'message': f'Failed to start: {str(e)}'
-        }), 500
+        data = request.json or {}
+        center_id = data.get('center_id', _config.ACTIVE_CENTER)
+        activity_type = data.get('activity_type', 'badminton-16+')
+        ckey = f"{center_id}/{activity_type}"
+        if ckey in monitoring_processes:
+            monitoring_processes[ckey]['active'] = False
+        return jsonify({'success': False, 'message': f'Failed to start: {str(e)}'}), 500
 
 
 @app.route('/api/stop', methods=['POST'])
@@ -327,127 +329,81 @@ def stop_monitoring():
 
     try:
         data = request.json or {}
+        center_id = data.get('center_id', _config.ACTIVE_CENTER)
         activity_type = data.get('activity_type')
 
         if not activity_type:
-            return jsonify({
-                'success': False,
-                'message': 'Activity type is required'
-            }), 400
+            return jsonify({'success': False, 'message': 'Activity type is required'}), 400
 
-        if not monitoring_processes.get(activity_type, {}).get('active', False):
-            return jsonify({
-                'success': False,
-                'message': 'Monitoring is not active for this sport'
-            }), 400
+        ckey = f"{center_id}/{activity_type}"
+        if not monitoring_processes.get(ckey, {}).get('active', False):
+            return jsonify({'success': False, 'message': 'Monitoring is not active for this sport'}), 400
 
-        monitoring_processes[activity_type]['active'] = False
-
-        return jsonify({
-            'success': True,
-            'message': 'Monitoring stopped'
-        })
+        monitoring_processes[ckey]['active'] = False
+        return jsonify({'success': True, 'message': 'Monitoring stopped'})
     except Exception as e:
         logger.error(f"Failed to stop monitoring: {str(e)}")
-        return jsonify({
-            'success': False,
-            'message': f'Failed to stop: {str(e)}'
-        }), 500
+        return jsonify({'success': False, 'message': f'Failed to stop: {str(e)}'}), 500
 
 
 @app.route('/api/status', methods=['GET'])
 def status():
-    """Get current status for all processes for this session"""
+    """Get current status for all processes plus static centers config"""
     global monitoring_processes
 
     processes = {}
     last_check_times = {}
 
-    for activity_type, process in monitoring_processes.items():
+    for ckey, process in monitoring_processes.items():
+        slash = ckey.find('/')
+        activity_type = ckey[slash + 1:] if slash != -1 else ckey
         screenshot_path = None
-        scraper = shared_scrapers.get(activity_type)
+        scraper = shared_scrapers.get(ckey)
         if scraper:
             if hasattr(scraper, 'screenshots') and activity_type in scraper.screenshots:
                 screenshot_path = scraper.screenshots[activity_type]
             if scraper.last_check_time:
-                last_check_times[activity_type] = scraper.last_check_time.isoformat()
+                last_check_times[ckey] = scraper.last_check_time.isoformat()
         elif 'screenshot' in process:
             screenshot_path = process.get('screenshot')
 
-        processes[activity_type] = {
+        processes[ckey] = {
             'active': process.get('active', False),
             'group_size': process.get('group_size', 2),
             'result': process.get('result'),
             'screenshot': screenshot_path,
             'slots': process.get('slots', []),
-            'last_error': process.get('last_error')
+            'last_error': process.get('last_error'),
+        }
+
+    # Build static centers metadata for the UI
+    centers_info = {}
+    for cid, center in _config.RECREATION_CENTERS.items():
+        if not center.get('activities'):
+            continue
+        slug = center['slug']
+        centers_info[cid] = {
+            'name': center['name'],
+            'area': center['area'],
+            'booking_url': f"https://reservation.frontdesksuite.ca/rcfs/{slug}",
+            'activities': {
+                aid: {
+                    'display_name': act['display_name'],
+                    'group_size_required': act['group_size_required'],
+                }
+                for aid, act in center['activities'].items()
+            },
         }
 
     return jsonify({
         'processes': processes,
         'last_check': last_check_times,
         'telegram_enabled': telegram.enabled,
-        'booking_url': _config.BOOKING_BASE_URL,
-        'active_center': _config.ACTIVE_CENTER,
+        'centers': centers_info,
     })
 
 
 
-
-@app.route('/api/centers', methods=['GET'])
-def get_centers():
-    """Return all available centers and the currently active one"""
-    return jsonify({
-        'centers': _config.RECREATION_CENTERS,
-        'active_center': _config.ACTIVE_CENTER,
-        'booking_url': _config.BOOKING_BASE_URL,
-    })
-
-
-@app.route('/api/set-center', methods=['POST'])
-def set_center():
-    """Switch the active recreation center at runtime"""
-    data = request.json or {}
-    center_id = data.get('center_id')
-
-    if center_id not in _config.RECREATION_CENTERS:
-        return jsonify({'success': False, 'message': f'Unknown center: {center_id}'}), 400
-
-    # Stop all active monitoring and clear all scraper instances
-    for proc in monitoring_processes.values():
-        proc['active'] = False
-    monitoring_processes.clear()
-    shared_scrapers.clear()
-    booking_scrapers.clear()
-
-    # Update config globals
-    center = _config.RECREATION_CENTERS[center_id]
-    slug = center['slug']
-    activities = center.get('activities', {})
-
-    _config.ACTIVE_CENTER = center_id
-    _config.ACTIVE_CENTER_SLUG = slug
-    _config.BOOKING_BASE_URL = f"https://reservation.frontdesksuite.ca/rcfs/{slug}"
-    _config.BOOKING_CF_URL = f"https://reservation-cf.frontdeskqms.ca/rcfs/{slug}"
-    _config.PAGE_ID = center.get('page_id') or _config.PAGE_ID
-    _config.ACTIVITY_BUTTON_IDS = {a: v['button_id'] for a, v in activities.items()}
-    _config.ACTIVITY_DISPLAY_NAMES = {a: v['display_name'] for a, v in activities.items()}
-    _config.ACTIVITY_GROUP_SIZE_REQUIRED = {a: v['group_size_required'] for a, v in activities.items()}
-    _config.ACTIVITY_MATCH_PATTERNS = {a: v['match_patterns'] for a, v in activities.items()}
-
-    # Propagate to scraper module (imported these names at startup)
-    _scraper_module.BOOKING_BASE_URL = _config.BOOKING_BASE_URL
-    _scraper_module.BOOKING_CF_URL = _config.BOOKING_CF_URL
-    _scraper_module.ACTIVE_CENTER_SLUG = slug
-    _scraper_module.ACTIVITY_MATCH_PATTERNS = _config.ACTIVITY_MATCH_PATTERNS
-    _scraper_module.ACTIVITY_BUTTON_IDS = _config.ACTIVITY_BUTTON_IDS
-    _scraper_module.PAGE_ID = _config.PAGE_ID
-
-    return jsonify({
-        'success': True,
-        'center': center,
-        'booking_url': _config.BOOKING_BASE_URL,
-    })
 
 
 @app.route('/screenshots/<filename>')
@@ -484,10 +440,12 @@ def select_slot():
                 'missing_fields': missing_fields
             }), 400
         
+        center_id = data.get('center_id', _config.ACTIVE_CENTER)
+
         # Use a per-session scraper for the booking flow so each user's
         # slot selection state is isolated from other users.
         sid = _session_id()
-        scraper = get_booking_scraper(sid, activity_type)
+        scraper = get_booking_scraper(sid, center_id, activity_type)
 
         # Use session lock to prevent multiple simultaneous operations
         with session_lock:
@@ -540,9 +498,11 @@ def submit_contact():
                 'message': 'Activity type is required'
             }), 400
         
+        center_id = data.get('center_id', _config.ACTIVE_CENTER)
+
         # Continue the booking flow using the same per-session scraper
         sid = _session_id()
-        scraper = get_booking_scraper(sid, activity_type)
+        scraper = get_booking_scraper(sid, center_id, activity_type)
 
         # Use session lock to prevent multiple simultaneous operations
         with session_lock:
@@ -573,39 +533,31 @@ def check_now():
     """Manually check for available slots right now"""
     try:
         data = request.json or {}
+        center_id = data.get('center_id', _config.ACTIVE_CENTER)
         activity_type = data.get('activity_type', 'badminton-16+')
         group_size = int(data.get('group_size', 2))
-        
-        # Use the shared scraper for check-now (same session as monitoring loop)
-        scraper = get_shared_scraper(activity_type)
+        ckey = f"{center_id}/{activity_type}"
 
-        # Use session lock to prevent multiple simultaneous operations
+        if center_id not in _config.RECREATION_CENTERS:
+            return jsonify({'success': False, 'message': f'Unknown center: {center_id}'}), 400
+
+        scraper = get_shared_scraper(center_id, activity_type)
+
         with session_lock:
-            # Initialize if needed
             if not scraper.current_session_id:
                 if not scraper.initialize_session():
-                    return jsonify({
-                        'success': False,
-                        'message': 'Failed to initialize session',
-                        'error_type': 'session_error'
-                    }), 500
-
-            # Get all available slots (with navigation)
+                    return jsonify({'success': False, 'message': 'Failed to initialize session', 'error_type': 'session_error'}), 500
             result = scraper.get_available_slots(activity_type, group_size, navigate=True)
 
-        # Extract results
         slots = result.get('slots', []) if result.get('success') else []
         screenshot_path = result.get('screenshot')
 
-        # Send Telegram notification if slots found (single check)
         if slots:
             telegram.notify_slot_found(slots, activity_type)
 
-        # Update monitoring process state if it exists
-        if activity_type in monitoring_processes and screenshot_path:
-            monitoring_processes[activity_type]['screenshot'] = screenshot_path
-        
-        # Return result with proper error handling
+        if ckey in monitoring_processes and screenshot_path:
+            monitoring_processes[ckey]['screenshot'] = screenshot_path
+
         if result.get('success'):
             return jsonify({
                 'success': True,
@@ -614,7 +566,6 @@ def check_now():
                 'message': result.get('message', f'Found {len(slots)} available slot(s)')
             })
         else:
-            # Return error with details
             return jsonify({
                 'success': False,
                 'slots': [],
@@ -628,14 +579,7 @@ def check_now():
         import traceback
         error_details = traceback.format_exc()
         logger.error(f"Error in manual check: {str(e)}\n{error_details}")
-        return jsonify({
-            'success': False,
-            'slots': [],
-            'screenshot': None,
-            'message': f'Error: {str(e)}',
-            'error_type': 'unknown_error',
-            'error_details': str(e)
-        }), 500
+        return jsonify({'success': False, 'slots': [], 'screenshot': None, 'message': f'Error: {str(e)}', 'error_type': 'unknown_error', 'error_details': str(e)}), 500
 
 
 
