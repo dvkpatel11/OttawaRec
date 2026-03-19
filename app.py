@@ -3,6 +3,7 @@ from flask_cors import CORS
 import os
 import json
 import logging
+import requests
 from dotenv import load_dotenv
 from scraper import OttawaRecBookingScraper
 from telegram_notifier import TelegramNotifier
@@ -75,27 +76,99 @@ _stored_ids = load_chat_ids()
 if _stored_ids:
     telegram.set_chat_ids(_stored_ids)
 
-# Global state - track multiple monitoring processes
-monitoring_processes = {}  # {activity_type: {'thread': thread, 'active': bool, 'group_size': int, 'result': dict, 'screenshot': str}}
 
-# Separate scraper instances per activity type to avoid session conflicts
-scrapers = {}  # {activity_type: OttawaRecBookingScraper instance}
+def _handle_telegram_message(message: dict):
+    """Shared logic for registering a user from an incoming Telegram message."""
+    chat = message.get('chat', {})
+    chat_id = str(chat.get('id', ''))
+    if not chat_id:
+        return
+    text = (message.get('text') or '').strip().lower()
+    first_name = chat.get('first_name') or 'there'
 
-def get_scraper(activity_type: str = None):
-    """Get or create a scraper instance for an activity type"""
-    # For API routes that don't specify activity, use a default
-    if not activity_type:
-        activity_type = 'default'
-    
-    if activity_type not in scrapers:
-        scraper = OttawaRecBookingScraper()
-        scraper.clear_screenshots()
-        scrapers[activity_type] = scraper
-    
-    return scrapers[activity_type]
+    if text == '/stop':
+        if telegram.remove_chat_id(chat_id):
+            save_chat_ids(telegram.chat_ids)
+            telegram.send_to(chat_id,
+                "✅ You've been removed from the Ottawa Rec notification list.\n"
+                "Send any message to re-subscribe."
+            )
+    else:
+        if telegram.add_chat_id(chat_id):
+            save_chat_ids(telegram.chat_ids)
+            from config import RECREATION_CENTERS, ACTIVE_CENTER
+            center_name = RECREATION_CENTERS[ACTIVE_CENTER]['name']
+            telegram.send_to(chat_id,
+                f"👋 Hi {first_name}! You're now subscribed to <b>Ottawa Rec Booking</b> alerts.\n\n"
+                f"📍 Currently watching: <b>{center_name}</b>\n\n"
+                f"You'll get a message as soon as a slot opens up.\n\n"
+                f"Send /stop at any time to unsubscribe."
+            )
 
-# Initialize default scraper for backward compatibility
-scraper = get_scraper('default')
+
+def _telegram_poll_loop():
+    """Long-poll Telegram for incoming messages and auto-register senders.
+    Used when a webhook isn't available (local dev, HTTP-only environments).
+    """
+    offset = 0
+    base = f"https://api.telegram.org/bot{telegram.bot_token}"
+    while True:
+        try:
+            resp = requests.get(
+                f"{base}/getUpdates",
+                params={"offset": offset, "timeout": 30, "allowed_updates": ["message"]},
+                timeout=35,
+            )
+            if resp.status_code != 200:
+                time.sleep(5)
+                continue
+            data = resp.json()
+            for update in data.get("result", []):
+                offset = update["update_id"] + 1
+                msg = update.get("message") or update.get("edited_message")
+                if msg:
+                    _handle_telegram_message(msg)
+        except Exception:
+            time.sleep(5)
+
+
+if telegram.enabled:
+    _poll_thread = threading.Thread(target=_telegram_poll_loop, daemon=True)
+    _poll_thread.start()
+
+# Shared scrapers used for monitoring / check-now (one per activity type).
+# Keeping a single HTTP session per activity avoids the booking site's
+# "multiple browser tabs" detection, which triggers when multiple requests.Session()
+# objects hit the site simultaneously.
+monitoring_processes = {}  # {activity_type: {active, group_size, ...}}
+shared_scrapers = {}       # {activity_type: OttawaRecBookingScraper}
+
+# Per-browser-session scrapers used ONLY for the booking flow (select-slot,
+# submit-contact).  Each user gets their own isolated HTTP session so their
+# booking state doesn't collide with other users.
+booking_scrapers = {}  # {session_id: {activity_type: OttawaRecBookingScraper}}
+
+def _session_id() -> str:
+    """Extract the browser session ID from the request header."""
+    return request.headers.get('X-Session-Id', 'default')
+
+def get_shared_scraper(activity_type: str) -> 'OttawaRecBookingScraper':
+    """Get or create the shared (monitoring) scraper for an activity type."""
+    if activity_type not in shared_scrapers:
+        s = OttawaRecBookingScraper()
+        s.clear_screenshots()
+        shared_scrapers[activity_type] = s
+    return shared_scrapers[activity_type]
+
+def get_booking_scraper(session_id: str, activity_type: str) -> 'OttawaRecBookingScraper':
+    """Get or create a per-session scraper for the booking flow."""
+    if session_id not in booking_scrapers:
+        booking_scrapers[session_id] = {}
+    if activity_type not in booking_scrapers[session_id]:
+        s = OttawaRecBookingScraper()
+        s.clear_screenshots()
+        booking_scrapers[session_id][activity_type] = s
+    return booking_scrapers[session_id][activity_type]
 
 # Session lock to prevent multiple simultaneous bookings
 import threading
@@ -103,110 +176,75 @@ session_lock = threading.Lock()
 
 
 def monitor_loop(activity_type: str = 'badminton-16+', group_size: int = 2):
-    """Background monitoring loop for a specific activity"""
+    """Background monitoring loop using the shared scraper for an activity type."""
     global monitoring_processes
-    
-    # Get dedicated scraper instance for this activity type
-    scraper = get_scraper(activity_type)
-    
-    # Initialize session outside the lock to allow parallel monitoring
-    # The lock will be used for actual operations, not initialization
+
+    scraper = get_shared_scraper(activity_type)
+
     if not scraper.initialize_session():
-        logger.error(f"Failed to initialize scraper session for {activity_type}")
+        logger.error(f"Failed to initialize scraper for {activity_type}")
         telegram.notify_error(f"Failed to initialize booking session for {activity_type}")
         if activity_type in monitoring_processes:
             monitoring_processes[activity_type]['active'] = False
         return
-    
+
     check_count = 0
-    # Don't send app started message - too many notifications
     while monitoring_processes.get(activity_type, {}).get('active', False):
         try:
             check_count += 1
-            
-            # Use session lock for slot checking
+            proc = monitoring_processes[activity_type]
+
             with session_lock:
-                # Re-initialize session if needed (session may have expired)
                 if not scraper.current_session_id:
                     if not scraper.initialize_session():
-                        logger.error(f"Failed to re-initialize session for {activity_type}")
+                        logger.error(f"Failed to re-initialize scraper for {activity_type}")
                         telegram.notify_error(f"Failed to re-initialize session for {activity_type}")
-                        monitoring_processes[activity_type]['last_error'] = {
-                            'message': 'Failed to re-initialize session',
-                            'error_type': 'session_error'
-                        }
-                        # Wait before retrying
+                        proc['last_error'] = {'message': 'Failed to re-initialize session', 'error_type': 'session_error'}
                         time.sleep(60)
                         continue
-                
-                # Get all available slots (with navigation)
+
                 result = scraper.get_available_slots(activity_type, group_size, navigate=True)
                 slots = result.get('slots', []) if result.get('success') else []
-                
-                # Update screenshot in process state
+
                 if result.get('screenshot'):
-                    monitoring_processes[activity_type]['screenshot'] = result['screenshot']
+                    proc['screenshot'] = result['screenshot']
                 elif hasattr(scraper, 'screenshots') and activity_type in scraper.screenshots:
-                    monitoring_processes[activity_type]['screenshot'] = scraper.screenshots[activity_type]
-                
-                # Store error info if check failed
+                    proc['screenshot'] = scraper.screenshots[activity_type]
+
                 if not result.get('success'):
-                    monitoring_processes[activity_type]['last_error'] = {
+                    proc['last_error'] = {
                         'message': result.get('message', 'Unknown error'),
                         'error_type': result.get('error_type', 'unknown_error'),
-                        'status_code': result.get('status_code')
+                        'status_code': result.get('status_code'),
                     }
-                    # If it's a session/auth error, try to re-initialize next time
                     if result.get('error_type') in ['session_error', 'authentication_error']:
                         scraper.current_session_id = None
-                    
-                    # Update screenshot even on error (for debugging)
                     if result.get('screenshot'):
-                        monitoring_processes[activity_type]['screenshot'] = result['screenshot']
+                        proc['screenshot'] = result['screenshot']
                     elif hasattr(scraper, 'screenshots') and activity_type in scraper.screenshots:
-                        monitoring_processes[activity_type]['screenshot'] = scraper.screenshots[activity_type]
-            
-            # Check previous slots BEFORE updating (to detect new slots)
-            previous_slots = monitoring_processes.get(activity_type, {}).get('slots', [])
-            previous_slot_count = len(previous_slots) if previous_slots else 0
-            
-            # Update slots in monitoring process state (for UI display)
-            monitoring_processes[activity_type]['slots'] = slots
-            
+                        proc['screenshot'] = scraper.screenshots[activity_type]
+
+            previous_slot_count = len(proc.get('slots') or [])
+            proc['slots'] = slots
+
             if slots:
-                # Notify when slots are found
-                # Send notification if:
-                # 1. First check (check_count == 1), OR
-                # 2. We didn't have slots before but now we do (previous_slot_count == 0 and len(slots) > 0), OR
-                # 3. We have more slots than before (new slots appeared)
-                should_notify = (
-                    check_count == 1 or 
-                    previous_slot_count == 0 or 
-                    len(slots) > previous_slot_count
-                )
-                
+                should_notify = (check_count == 1 or previous_slot_count == 0 or len(slots) > previous_slot_count)
                 if should_notify:
                     telegram.notify_slot_found(slots, activity_type)
-                # Don't auto-book - let user choose which slot to book via UI
-            # Don't notify for no slots - too many messages
-            
-            # Wait before next check (5 minutes = 300 seconds)
+
             wait_seconds = 300
             if monitoring_processes.get(activity_type, {}).get('active', False):
                 for _ in range(wait_seconds):
                     if not monitoring_processes.get(activity_type, {}).get('active', False):
                         break
                     time.sleep(1)
-                    
+
         except Exception as e:
             import traceback
-            error_details = traceback.format_exc()
-            logger.error(f"Monitoring error for {activity_type}: {str(e)}\n{error_details}")
-            # Critical: notify on errors
+            logger.error(f"Monitoring error for {activity_type}: {str(e)}\n{traceback.format_exc()}")
             telegram.notify_error(f"Monitoring error for {activity_type}: {str(e)}")
-            # Wait a bit before retrying
             time.sleep(60)
-    
+
     if activity_type in monitoring_processes:
         monitoring_processes[activity_type]['active'] = False
 
@@ -231,33 +269,32 @@ def index():
 def start_monitoring():
     """Start the monitoring and booking process for a specific activity"""
     global monitoring_processes
-    
+
     try:
         data = request.json or {}
         activity_type = data.get('activity_type', 'badminton-16+')
         group_size = int(data.get('group_size', 2))
-        
         # Validate group size
         if group_size < 1 or group_size > 10:
             return jsonify({
                 'success': False,
                 'message': 'Group size must be between 1 and 10'
             }), 400
-        
+
         # Check if already monitoring this activity
-        if activity_type in monitoring_processes and monitoring_processes[activity_type]['active']:
+        if monitoring_processes.get(activity_type, {}).get('active', False):
             return jsonify({
                 'success': False,
                 'message': 'Monitoring is already active for this sport'
             }), 400
-        
-        # Create new monitoring process
+
+        # Create new monitoring process (shared across all sessions)
         monitoring_processes[activity_type] = {
             'active': True,
             'group_size': group_size,
             'result': None
         }
-        
+
         thread = threading.Thread(
             target=monitor_loop,
             args=(activity_type, group_size),
@@ -265,7 +302,7 @@ def start_monitoring():
         )
         thread.start()
         monitoring_processes[activity_type]['thread'] = thread
-        
+
         return jsonify({
             'success': True,
             'message': 'Monitoring started successfully'
@@ -274,7 +311,7 @@ def start_monitoring():
         import traceback
         error_details = traceback.format_exc()
         logger.error(f"Failed to start monitoring: {str(e)}\n{error_details}")
-        activity_type = data.get('activity_type', 'badminton-16+')
+        activity_type = (request.json or {}).get('activity_type', 'badminton-16+')
         if activity_type in monitoring_processes:
             monitoring_processes[activity_type]['active'] = False
         return jsonify({
@@ -287,30 +324,25 @@ def start_monitoring():
 def stop_monitoring():
     """Stop the monitoring process for a specific activity"""
     global monitoring_processes
-    
+
     try:
         data = request.json or {}
         activity_type = data.get('activity_type')
-        
+
         if not activity_type:
             return jsonify({
                 'success': False,
                 'message': 'Activity type is required'
             }), 400
-        
-        if activity_type not in monitoring_processes or not monitoring_processes[activity_type]['active']:
+
+        if not monitoring_processes.get(activity_type, {}).get('active', False):
             return jsonify({
                 'success': False,
                 'message': 'Monitoring is not active for this sport'
             }), 400
-        
+
         monitoring_processes[activity_type]['active'] = False
-        
-        # Optionally clean up scraper instance when monitoring stops
-        # (Commented out to preserve session state in case user wants to check manually)
-        # if activity_type in scrapers:
-        #     del scrapers[activity_type]
-        
+
         return jsonify({
             'success': True,
             'message': 'Monitoring stopped'
@@ -325,15 +357,15 @@ def stop_monitoring():
 
 @app.route('/api/status', methods=['GET'])
 def status():
-    """Get current status for all processes"""
+    """Get current status for all processes for this session"""
     global monitoring_processes
-    
+
     processes = {}
     last_check_times = {}
-    
+
     for activity_type, process in monitoring_processes.items():
         screenshot_path = None
-        scraper = scrapers.get(activity_type)
+        scraper = shared_scrapers.get(activity_type)
         if scraper:
             if hasattr(scraper, 'screenshots') and activity_type in scraper.screenshots:
                 screenshot_path = scraper.screenshots[activity_type]
@@ -341,16 +373,16 @@ def status():
                 last_check_times[activity_type] = scraper.last_check_time.isoformat()
         elif 'screenshot' in process:
             screenshot_path = process.get('screenshot')
-        
+
         processes[activity_type] = {
             'active': process.get('active', False),
             'group_size': process.get('group_size', 2),
             'result': process.get('result'),
             'screenshot': screenshot_path,
-            'slots': process.get('slots', []),  # Include slots in status response
-            'last_error': process.get('last_error')  # Include last error if any
+            'slots': process.get('slots', []),
+            'last_error': process.get('last_error')
         }
-    
+
     return jsonify({
         'processes': processes,
         'last_check': last_check_times,
@@ -381,11 +413,12 @@ def set_center():
     if center_id not in _config.RECREATION_CENTERS:
         return jsonify({'success': False, 'message': f'Unknown center: {center_id}'}), 400
 
-    # Stop all active monitoring and clear scraper instances
-    for activity_type in list(monitoring_processes.keys()):
-        monitoring_processes[activity_type]['active'] = False
+    # Stop all active monitoring and clear all scraper instances
+    for proc in monitoring_processes.values():
+        proc['active'] = False
     monitoring_processes.clear()
-    scrapers.clear()
+    shared_scrapers.clear()
+    booking_scrapers.clear()
 
     # Update config globals
     center = _config.RECREATION_CENTERS[center_id]
@@ -451,9 +484,11 @@ def select_slot():
                 'missing_fields': missing_fields
             }), 400
         
-        # Get dedicated scraper instance for this activity type
-        scraper = get_scraper(activity_type)
-        
+        # Use a per-session scraper for the booking flow so each user's
+        # slot selection state is isolated from other users.
+        sid = _session_id()
+        scraper = get_booking_scraper(sid, activity_type)
+
         # Use session lock to prevent multiple simultaneous operations
         with session_lock:
             # Initialize if needed
@@ -464,7 +499,7 @@ def select_slot():
                         'message': 'Failed to initialize session',
                         'error_type': 'session_error'
                     }), 500
-            
+
             # Get contact info fields
             result = scraper.get_contact_info_fields(activity_type, slot_data, group_size)
         
@@ -505,9 +540,10 @@ def submit_contact():
                 'message': 'Activity type is required'
             }), 400
         
-        # Get dedicated scraper instance for this activity type
-        scraper = get_scraper(activity_type)
-        
+        # Continue the booking flow using the same per-session scraper
+        sid = _session_id()
+        scraper = get_booking_scraper(sid, activity_type)
+
         # Use session lock to prevent multiple simultaneous operations
         with session_lock:
             # Submit contact info
@@ -540,9 +576,9 @@ def check_now():
         activity_type = data.get('activity_type', 'badminton-16+')
         group_size = int(data.get('group_size', 2))
         
-        # Get dedicated scraper instance for this activity type
-        scraper = get_scraper(activity_type)
-        
+        # Use the shared scraper for check-now (same session as monitoring loop)
+        scraper = get_shared_scraper(activity_type)
+
         # Use session lock to prevent multiple simultaneous operations
         with session_lock:
             # Initialize if needed
@@ -553,22 +589,21 @@ def check_now():
                         'message': 'Failed to initialize session',
                         'error_type': 'session_error'
                     }), 500
-            
+
             # Get all available slots (with navigation)
             result = scraper.get_available_slots(activity_type, group_size, navigate=True)
-        
+
         # Extract results
         slots = result.get('slots', []) if result.get('success') else []
         screenshot_path = result.get('screenshot')
-        
+
         # Send Telegram notification if slots found (single check)
         if slots:
             telegram.notify_slot_found(slots, activity_type)
-        
-        # Update monitoring process if it exists
-        if activity_type in monitoring_processes:
-            if screenshot_path:
-                monitoring_processes[activity_type]['screenshot'] = screenshot_path
+
+        # Update monitoring process state if it exists
+        if activity_type in monitoring_processes and screenshot_path:
+            monitoring_processes[activity_type]['screenshot'] = screenshot_path
         
         # Return result with proper error handling
         if result.get('success'):
@@ -650,38 +685,8 @@ def telegram_webhook():
 
     message = update.get('message') or update.get('edited_message')
     if not message:
-        return '', 200  # ignore non-message updates (inline queries, etc.)
-
-    chat = message.get('chat', {})
-    chat_id = str(chat.get('id', ''))
-    if not chat_id:
         return '', 200
-
-    text = (message.get('text') or '').strip().lower()
-    first_name = chat.get('first_name') or 'there'
-
-    if text == '/stop':
-        removed = telegram.remove_chat_id(chat_id)
-        if removed:
-            save_chat_ids(telegram.chat_ids)
-            telegram.send_to(chat_id,
-                "✅ You've been removed from the Ottawa Rec notification list.\n"
-                "Send any message to re-subscribe."
-            )
-    else:
-        added = telegram.add_chat_id(chat_id)
-        if added:
-            save_chat_ids(telegram.chat_ids)
-            from config import RECREATION_CENTERS, ACTIVE_CENTER
-            center_name = RECREATION_CENTERS[ACTIVE_CENTER]['name']
-            telegram.send_to(chat_id,
-                f"👋 Hi {first_name}! You're now subscribed to <b>Ottawa Rec Booking</b> alerts.\n\n"
-                f"📍 Currently watching: <b>{center_name}</b>\n\n"
-                f"You'll get a message as soon as a badminton or pickleball slot opens up.\n\n"
-                f"Send /stop at any time to unsubscribe."
-            )
-        # If already registered, silently ignore (no spam)
-
+    _handle_telegram_message(message)
     return '', 200
 
 

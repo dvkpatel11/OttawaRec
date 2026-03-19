@@ -21,7 +21,10 @@ RECREATION_CENTERS = {
             "badminton-doubles-adult": {
                 "display_name": "Badminton (Doubles – Adult)",
                 "button_id": "fac10819-dca0-469c-b6cd-66ce4cdbf810",
-                "match_patterns": [r"badminton.*doubles.*adult", r"badminton.*adult(?!.*all)"],
+                "match_patterns": [
+                    r"badminton.*doubles.*adult",
+                    r"badminton.*adult(?!.*all)",
+                ],
                 "group_size_required": True,
             },
             "badminton-doubles-all-ages": {
@@ -44,9 +47,9 @@ RECREATION_CENTERS = {
                 "group_size_required": True,
             },
             "pickleball-rotation": {
-                "display_name": "Pickleball (Adult – Rotation)",
-                "button_id": "ad308a39-09c1-4a55-9e75-bcc30ccc957b",
-                "match_patterns": [r"pickleball(?!.*intermediate)"],
+                "display_name": "Pickleball (Adult – Rotations)",
+                "button_id": "07497dc5-2307-4832-91f4-d5f67d1803a9",
+                "match_patterns": [r"pickleball.*rotations"],
                 "group_size_required": True,
             },
         },

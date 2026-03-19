@@ -5,7 +5,19 @@
       "Bash(grep -r \"import\\\\|from\" /c/Users/deepv/Desktop/Projects/OttawaRecScraper/*.py)",
       "Bash(grep -r \"chat_ids.json\\\\|CHAT_IDS_FILE\" /c/Users/deepv/Desktop/Projects/OttawaRecScraper/*.py)",
       "WebFetch(domain:reservation.frontdesksuite.ca)",
-      "WebFetch(domain:reservation-cf.frontdeskqms.ca)"
+      "WebFetch(domain:reservation-cf.frontdeskqms.ca)",
+      "Bash(python -c \"from config import RECREATION_CENTERS; print\\(''config OK''\\)\")",
+      "Bash(curl -s http://localhost:5000/)",
+      "Bash(netstat -ano)",
+      "Bash(findstr :5000)",
+      "Bash(taskkill /PID 25124 /F)",
+      "Bash(taskkill /PID 8168 /F)",
+      "Bash(taskkill //PID 8168 //F)",
+      "Bash(taskkill //PID 25124 //F)",
+      "Bash(python app.py)",
+      "Bash(xargs -I{} taskkill //PID {} //F)",
+      "Bash(curl -s -X POST http://localhost:5000/api/telegram/setup-webhook -H \"Content-Type: application/json\" -d \"{\"\"base_url\"\": \"\"http://localhost:5000\"\"}\")",
+      "Bash(taskkill //PID 27248 //F)"
     ]
   }
 }
